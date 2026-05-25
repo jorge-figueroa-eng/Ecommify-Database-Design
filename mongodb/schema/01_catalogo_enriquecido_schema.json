@@ -1,0 +1,44 @@
+{
+    "_id": {
+        "type": "ObjectId",
+        "required": true
+    },
+    "product_id": {
+        "type": "String",
+        "required": true,
+        "unique": true,
+        "index": true
+    },
+    "category_translations": {
+        "en": {
+            "type": "String"
+        },
+        "es": {
+            "type": "String"
+        }
+    },
+    "photos": [
+        {
+            "type": "String"
+        }
+    ],
+    "specifications": {
+        "type": "Map",
+        "of": "String"
+    },
+    "dimensions": {
+        "weight_g": {
+            "type": "Number"
+        },
+        "length_cm": {
+            "type": "Number"
+        },
+        "height_cm": {
+            "type": "Number"
+        },
+        "width_cm": {
+            "type": "Number"
+        }
+    },
+    "timestamps": true
+}
