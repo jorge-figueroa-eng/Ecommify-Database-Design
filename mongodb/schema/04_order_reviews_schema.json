@@ -1,10 +1,11 @@
 {
-    "_id": "ObjectId('6650b2a1f1d2c3a4b5e6f702')",
-    "review_id": "rev_99321b8c",
-    "order_id": "order_2026_q2_00145",
-    "review_score": 5,
-    "review_comment_title": "Excelente calidad",
-    "review_comment_message": "El computador llegó en perfecto estado y muy rápido.",
-    "review_creation_date": "2026-11-28T14:30:00-03:00",
-    "review_answer_timestamp": "2026-11-29T09:15:22-03:00"
+    "_id": { "type": "ObjectId", "required": true },
+    "review_id": { "type": "String", "required": true, "unique": true, "index": true },
+    "order_id": { "type": "String", "required": true, "index": true },
+    "review_score": { "type": "Number", "required": true, "min": 1, "max": 5 },
+    "review_comment_title": { "type": "String" },
+    "review_comment_message": { "type": "String" },
+    "review_creation_date": { "type": "Date", "required": true },
+    "review_answer_timestamp": { "type": "Date" },
+    "timestamps": true
 }
