@@ -1,6 +1,3 @@
--- advanced_types_examples.sql
--- Consultas de ejemplo para tipos avanzados y extensiones.
-
 -- 1. Consulta JSONB: productos con peso mayor a 1000 g según especificaciones.
 SELECT product_id, product_specifications
 FROM products
