@@ -1,0 +1,12 @@
+{
+    "_id": "ObjectId('6650b2a1f1d2c3a4b5e6f704')",
+    "seller_id": "sell_99321",
+    "reputation_score": 4.8,
+    "kpis_mensuales": {
+        "periodo": "2026-05",
+        "total_ventas_value": 15450.00,
+        "ordenes_despachadas": 124,
+        "avg_shipping_time_hours": 24.5
+    },
+    "last_aggregation_timestamp": "2026-05-24T00:00:00Z"
+}

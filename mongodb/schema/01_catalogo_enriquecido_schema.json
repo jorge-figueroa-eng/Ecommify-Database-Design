@@ -1,0 +1,22 @@
+{
+    "_id": "ObjectId('6650b2a1f1d2c3a4b5e6f701')",
+    "product_id": "prod_elec_78942",
+    "category_translations": {
+        "en": "computers",
+        "es": "informática"
+    },
+    "photos": [
+        "http://cdn.ecommify.com/products/p4_main.jpg"
+    ],
+    "specifications": {
+        "procesador": "Intel Core i7",
+        "memoria_ram": "16GB",
+        "almacenamiento": "512GB SSD"
+    },
+    "dimensions": {
+        "weight_g": 1350,
+        "length_cm": 32.4,
+        "height_cm": 1.79,
+        "width_cm": 22.2
+    }
+}

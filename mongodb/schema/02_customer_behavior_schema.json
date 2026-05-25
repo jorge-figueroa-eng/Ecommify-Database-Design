@@ -1,0 +1,18 @@
+{
+    "_id": "ObjectId('6650b2a1f1d2c3a4b5e6f703')",
+    "customer_unique_id": "c_uniq_882341",
+    "last_session_date": "2026-05-24T19:10:00Z",
+    "recent_searches": [
+        "computador portatil i7",
+        "mouse inalámbrico"
+    ],
+    "active_cart": {
+        "updated_at": "2026-05-24T19:12:30Z",
+        "items": [
+            {
+                "product_id": "prod_elec_78942",
+                "quantity": 1
+            }
+        ]
+    }
+}
