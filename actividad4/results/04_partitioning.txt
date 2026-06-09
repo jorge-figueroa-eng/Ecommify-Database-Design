@@ -1,0 +1,166 @@
+psql:sql/04_partitioning.sql:32: NOTICE:  table "orders_part" does not exist, skipping
+==== Particiones creadas y filas por partición (incluye DEFAULT) ====
+      particion      | filas_aprox | tamano  
+---------------------+-------------+---------
+ orders_part_2016_09 | 34,709      | 7416 kB
+ orders_part_2016_10 | 40,153      | 8584 kB
+ orders_part_2016_11 | 38,692      | 8272 kB
+ orders_part_2016_12 | 39,895      | 8528 kB
+ orders_part_2017_01 | 39,982      | 8544 kB
+ orders_part_2017_02 | 36,551      | 7816 kB
+ orders_part_2017_03 | 39,716      | 8488 kB
+ orders_part_2017_04 | 38,723      | 8272 kB
+ orders_part_2017_05 | 39,550      | 8448 kB
+ orders_part_2017_06 | 38,882      | 8312 kB
+ orders_part_2017_07 | 40,015      | 8560 kB
+ orders_part_2017_08 | 40,204      | 8592 kB
+ orders_part_2017_09 | 38,840      | 8304 kB
+ orders_part_2017_10 | 40,003      | 8560 kB
+ orders_part_2017_11 | 38,635      | 8264 kB
+ orders_part_2017_12 | 39,946      | 8544 kB
+ orders_part_2018_01 | 39,938      | 8536 kB
+ orders_part_2018_02 | 36,207      | 7736 kB
+ orders_part_2018_03 | 40,117      | 8576 kB
+ orders_part_2018_04 | 39,177      | 8376 kB
+ orders_part_2018_05 | 40,316      | 8616 kB
+ orders_part_2018_06 | 38,907      | 8320 kB
+ orders_part_2018_07 | 40,438      | 8640 kB
+ orders_part_2018_08 | 39,993      | 8552 kB
+ orders_part_2018_09 | 38,895      | 8320 kB
+ orders_part_2018_10 | 20,516      | 4392 kB
+ orders_part_default | 1,000       | 216 kB
+(27 rows)
+
+==== Filas que cayeron en la partición DEFAULT (anómalas 2019) ====
+ filas_en_default 
+------------------
+             1000
+(1 row)
+
+######## A) Barrido por rango — TABLA PLANA (orders) ########
+                                                                                             QUERY PLAN                                                                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=34087.43..34087.44 rows=1 width=16) (actual time=29.501..33.842 rows=1 loops=1)
+   Buffers: shared hit=1 read=26751 written=10
+   ->  Gather  (cost=34087.21..34087.42 rows=2 width=16) (actual time=29.449..33.839 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=1 read=26751 written=10
+         ->  Partial Aggregate  (cost=33087.21..33087.22 rows=1 width=16) (actual time=25.404..25.404 rows=1 loops=3)
+               Buffers: shared hit=1 read=26751 written=10
+               ->  Parallel Seq Scan on orders  (cost=0.00..33002.00 rows=17042 width=0) (actual time=0.078..24.985 rows=12961 loops=3)
+                     Filter: ((order_purchase_timestamp >= '2017-06-01 00:00:00+00'::timestamp with time zone) AND (order_purchase_timestamp < '2017-07-01 00:00:00+00'::timestamp with time zone))
+                     Rows Removed by Filter: 320373
+                     Buffers: shared hit=1 read=26751 written=10
+ Planning:
+   Buffers: shared hit=8 read=1
+ Planning Time: 0.068 ms
+ Execution Time: 33.852 ms
+(16 rows)
+
+######## B) Barrido por rango — TABLA PARTICIONADA (orders_part) ########
+                                                                                       QUERY PLAN                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=1816.60..1816.61 rows=1 width=16) (actual time=9.811..9.812 rows=1 loops=1)
+   Buffers: shared hit=194 read=845 written=603
+   ->  Seq Scan on orders_part_2017_06 orders_part  (cost=0.00..1622.23 rows=38874 width=0) (actual time=0.019..8.738 rows=38882 loops=1)
+         Filter: ((order_purchase_timestamp >= '2017-06-01 00:00:00+00'::timestamp with time zone) AND (order_purchase_timestamp < '2017-07-01 00:00:00+00'::timestamp with time zone))
+         Buffers: shared hit=194 read=845 written=603
+ Planning:
+   Buffers: shared hit=52 read=3 written=3
+ Planning Time: 0.335 ms
+ Execution Time: 9.823 ms
+(9 rows)
+
+######## C) Consulta por order_id (sin clave de partición) ########
+                                                                            QUERY PLAN                                                                             
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Append  (cost=0.41..227.67 rows=27 width=9) (actual time=0.244..0.246 rows=1 loops=1)
+   Buffers: shared hit=77 read=4 written=3
+   ->  Index Scan using orders_part_2016_09_pkey on orders_part_2016_09 orders_part_1  (cost=0.41..8.43 rows=1 width=9) (actual time=0.010..0.010 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2016_10_pkey on orders_part_2016_10 orders_part_2  (cost=0.41..8.43 rows=1 width=9) (actual time=0.008..0.008 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2016_11_pkey on orders_part_2016_11 orders_part_3  (cost=0.41..8.43 rows=1 width=9) (actual time=0.006..0.006 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2016_12_pkey on orders_part_2016_12 orders_part_4  (cost=0.41..8.43 rows=1 width=9) (actual time=0.006..0.006 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_01_pkey on orders_part_2017_01 orders_part_5  (cost=0.41..8.43 rows=1 width=9) (actual time=0.008..0.008 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_02_pkey on orders_part_2017_02 orders_part_6  (cost=0.41..8.43 rows=1 width=9) (actual time=0.019..0.019 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=2 read=1 written=1
+   ->  Index Scan using orders_part_2017_03_pkey on orders_part_2017_03 orders_part_7  (cost=0.41..8.43 rows=1 width=9) (actual time=0.006..0.006 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_04_pkey on orders_part_2017_04 orders_part_8  (cost=0.41..8.43 rows=1 width=9) (actual time=0.007..0.007 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_05_pkey on orders_part_2017_05 orders_part_9  (cost=0.41..8.43 rows=1 width=9) (actual time=0.010..0.010 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_06_pkey on orders_part_2017_06 orders_part_10  (cost=0.41..8.43 rows=1 width=9) (actual time=0.011..0.011 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_07_pkey on orders_part_2017_07 orders_part_11  (cost=0.41..8.43 rows=1 width=9) (actual time=0.015..0.015 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=2 read=1 written=1
+   ->  Index Scan using orders_part_2017_08_pkey on orders_part_2017_08 orders_part_12  (cost=0.41..8.43 rows=1 width=9) (actual time=0.016..0.016 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_09_pkey on orders_part_2017_09 orders_part_13  (cost=0.41..8.43 rows=1 width=9) (actual time=0.016..0.016 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_10_pkey on orders_part_2017_10 orders_part_14  (cost=0.41..8.43 rows=1 width=9) (actual time=0.008..0.008 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_11_pkey on orders_part_2017_11 orders_part_15  (cost=0.41..8.43 rows=1 width=9) (actual time=0.007..0.008 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2017_12_pkey on orders_part_2017_12 orders_part_16  (cost=0.41..8.43 rows=1 width=9) (actual time=0.004..0.004 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_01_pkey on orders_part_2018_01 orders_part_17  (cost=0.41..8.43 rows=1 width=9) (actual time=0.006..0.006 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_02_pkey on orders_part_2018_02 orders_part_18  (cost=0.41..8.43 rows=1 width=9) (actual time=0.008..0.008 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_03_pkey on orders_part_2018_03 orders_part_19  (cost=0.41..8.43 rows=1 width=9) (actual time=0.008..0.008 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_04_pkey on orders_part_2018_04 orders_part_20  (cost=0.41..8.43 rows=1 width=9) (actual time=0.008..0.008 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_05_pkey on orders_part_2018_05 orders_part_21  (cost=0.41..8.43 rows=1 width=9) (actual time=0.006..0.006 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_06_pkey on orders_part_2018_06 orders_part_22  (cost=0.41..8.43 rows=1 width=9) (actual time=0.009..0.009 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_07_pkey on orders_part_2018_07 orders_part_23  (cost=0.41..8.43 rows=1 width=9) (actual time=0.005..0.005 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_08_pkey on orders_part_2018_08 orders_part_24  (cost=0.41..8.43 rows=1 width=9) (actual time=0.006..0.006 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_09_pkey on orders_part_2018_09 orders_part_25  (cost=0.41..8.43 rows=1 width=9) (actual time=0.007..0.007 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_2018_10_pkey on orders_part_2018_10 orders_part_26  (cost=0.41..8.43 rows=1 width=9) (actual time=0.004..0.005 rows=0 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=3
+   ->  Index Scan using orders_part_default_pkey on orders_part_default orders_part_27  (cost=0.28..8.29 rows=1 width=9) (actual time=0.016..0.016 rows=1 loops=1)
+         Index Cond: (order_id = 'ae21dab13299b0e599f3e0256ddc246d'::bpchar)
+         Buffers: shared hit=1 read=2 written=1
+ Planning:
+   Buffers: shared hit=464 read=25 written=7
+ Planning Time: 0.607 ms
+ Execution Time: 0.266 ms
+(87 rows)
+
