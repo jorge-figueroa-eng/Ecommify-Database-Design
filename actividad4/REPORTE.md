@@ -5,17 +5,6 @@ declarativo sobre la **arquitectura híbrida** del proyecto. Todas las métricas
 **reales**, medidas con `EXPLAIN (ANALYZE, BUFFERS)` sobre PostgreSQL 16 + PostGIS y
 **1.000.000 de órdenes** sintéticas.
 
-## Resumen ejecutivo
-
-| Fase | Entregable | Técnicas | Mejor mejora | Peor mejora |
-|---|---|---|---|---|
-| 1 | Optimización de consultas | 4 reescrituras (descorrelación, sargabilidad, anti‑join, keyset) | **−99,9 %** tiempo | −62,0 % tiempo |
-| 2 | Índices especializados | 5 tipos (B‑tree simple/compuesto, parcial, GIN, BRIN) | **−99,7 %** tiempo / BRIN **655× menor** | −85,0 % tiempo |
-| 3 | Particionamiento declarativo | RANGE mensual + DEFAULT | **−71,0 %** tiempo, **−96,1 %** bloques | — |
-
-Todo es reproducible de cero: `docker compose up` + `python3 generate_data.py --seed 42`
-+ los scripts numerados de `sql/`. Salidas crudas de `EXPLAIN` en `results/`.
-
 ---
 
 ## 1. Metodología
@@ -66,6 +55,71 @@ revelan **dos naturalezas de cuello de botella distintas**:
 > order_purchase_timestamp)`. El problema de "escanear todas las particiones" sin el
 > timestamp aparece sólo al particionar (Fase 3), no en la tabla plana.
 
+#### Descripción de las consultas críticas (`sql/01_critical_queries.sql`)
+
+**Q1 — Detalle de orden por `order_id`** · página de pedido, email de confirmación,
+soporte. La app suele conocer sólo `order_id`.
+```sql
+SELECT * FROM orders WHERE order_id = $1;
+```
+
+**Q2 — Historial de pedidos de una persona** · página "mis pedidos", paginada y por
+recencia. La persona es `customer_unique_id`; las órdenes referencian `customer_id`,
+por lo que requiere join `customers → orders`.
+```sql
+SELECT o.order_id, o.order_status, o.order_purchase_timestamp
+FROM orders o
+JOIN customers c ON c.customer_id = o.customer_id
+WHERE c.customer_unique_id = $1
+ORDER BY o.order_purchase_timestamp DESC
+LIMIT 20;
+```
+
+**Q3 — Seguimiento de pedido por `order_id`** · "rastrea tu pedido", altísima frecuencia.
+```sql
+SELECT order_status, order_delivered_customer_date, order_estimated_delivery_date
+FROM orders WHERE order_id = $1;
+```
+
+**Q4 — Ítems recientes de un vendedor** · panel del vendedor, paginado.
+```sql
+SELECT oi.order_id, oi.product_id, oi.price, o.order_status, o.order_purchase_timestamp
+FROM order_items oi
+JOIN orders o ON o.order_id = oi.order_id
+            AND o.order_purchase_timestamp = oi.order_purchase_timestamp
+WHERE oi.seller_id = $1
+ORDER BY o.order_purchase_timestamp DESC
+LIMIT 50;
+```
+
+**Q5 — Navegación de catálogo por categoría** · listado de productos, keyset.
+```sql
+SELECT product_id, product_category_name, product_weight_g
+FROM products WHERE category_id = $1
+ORDER BY product_id LIMIT 24;
+```
+
+**Q6 — Promociones activas de un producto** · se evalúa en cada vista de producto;
+respaldada por el índice GiST de la restricción EXCLUDE.
+```sql
+SELECT promotion_id, discount_percentage
+FROM product_promotions
+WHERE product_id = $1 AND promotion_period @> now();
+```
+
+**Q7 — Pedidos por aprobar** · worker de fulfillment; predicado muy selectivo (~0,5 %).
+```sql
+SELECT order_id, order_purchase_timestamp
+FROM orders WHERE order_status = 'created'
+ORDER BY order_purchase_timestamp LIMIT 100;
+```
+
+**Q8 — Sondeo del despachador de outbox** · patrón *transactional outbox* (~2 % pendiente).
+```sql
+SELECT event_id, payload FROM outbox_events
+WHERE processed_at IS NULL ORDER BY created_at LIMIT 100;
+```
+
 Esta fase aborda las consultas cuyo cuello es la **estructura del SQL**: la mejora se
 obtiene reescribiendo, sin agregar índices (medido sobre el esquema base). Se aplican
 **4 técnicas** (`sql/02_query_optimizations.sql`, salida en
@@ -83,47 +137,89 @@ obtiene reescribiendo, sin agregar índices (medido sobre el esquema base). Se a
 ### 2.3 Análisis por caso
 
 #### OPT‑1 — Descorrelación de subconsultas escalares
-**Caso.** Reporte "ventas por vendedor" para una página de 100 vendedores.
-**Por qué era apropiado.** La forma naíf (estilo ORM) ejecuta **dos subconsultas
+**Caso:** Reporte "ventas por vendedor" para una página de 100 vendedores.
+**Por qué era apropiado:** La forma naíf (estilo ORM) ejecuta **dos subconsultas
 correlacionadas por fila**; como `order_items` no tiene índice por `seller_id`, el
 plan repite un `Seq Scan` de 1,5 M filas **100×2 = 200 veces** (`loops=100` en cada
 `SubPlan`, *Rows Removed by Filter: 1.488.856*). Es un patrón O(N×M).
-**Reescritura.** Un único `Hash Right Join` + `GROUP BY` recorre `order_items` **una
+**Reescritura:** Un único `Hash Right Join` + `GROUP BY` recorre `order_items` **una
 sola vez**.
-**Resultado.** 9.365 → 247 ms (**−97,4 %**, ×37,9); bloques leídos 6,60 M → 33 K
+```sql
+-- ANTES: dos subconsultas escalares correlacionadas por vendedor
+SELECT s.seller_id,
+       (SELECT count(*)              FROM order_items i WHERE i.seller_id = s.seller_id) AS items_sold,
+       (SELECT coalesce(sum(i.price),0) FROM order_items i WHERE i.seller_id = s.seller_id) AS revenue
+FROM s100 s;
+-- DESPUÉS: un solo recorrido con JOIN + GROUP BY
+SELECT s.seller_id, count(i.*) AS items_sold, coalesce(sum(i.price),0) AS revenue
+FROM s100 s LEFT JOIN order_items i ON i.seller_id = s.seller_id
+GROUP BY s.seller_id;
+```
+**Resultado:** 9.365 → 247 ms (**−97,4 %**, ×37,9); bloques leídos 6,60 M → 33 K
 (**−99,5 %**). Cambio de plan: `CTE Scan + SubPlan×2 (Seq Scan)` → `HashAggregate +
 Hash Right Join (Seq Scan único)`. Desaparece incluso el JIT que el coste disparaba.
 
 #### OPT‑2 — Sargabilidad (eliminar función sobre la columna)
-**Caso.** Conteo de estados de un día concreto.
-**Por qué era apropiado.** `date_trunc('day', order_purchase_timestamp) = …` evalúa
+**Caso:** Conteo de estados de un día concreto.
+**Por qué era apropiado:** `date_trunc('day', order_purchase_timestamp) = …` evalúa
 la función **en cada una de las 10⁶ filas** y, sobre todo, vuelve el predicado
 **no‑sargable**: imposibilita usar índice o poda de particiones. La forma equivalente
 con **rango semiabierto** (`>= '2018‑05‑10' AND < '2018‑05‑11'`) es sargable.
-**Resultado.** 59,7 → 22,7 ms (**−62,0 %**). Los **bloques son idénticos** (~24.200;
+```sql
+-- ANTES (no sargable): función sobre la columna
+SELECT order_status, count(*) FROM orders
+WHERE date_trunc('day', order_purchase_timestamp) = TIMESTAMPTZ '2018-05-10'
+GROUP BY order_status;
+-- DESPUÉS (sargable): rango semiabierto
+SELECT order_status, count(*) FROM orders
+WHERE order_purchase_timestamp >= TIMESTAMPTZ '2018-05-10'
+  AND order_purchase_timestamp <  TIMESTAMPTZ '2018-05-11'
+GROUP BY order_status;
+```
+**Resultado:** 59,7 → 22,7 ms (**−62,0 %**). Los **bloques son idénticos** (~24.200;
 ambos hacen Seq Scan sobre la tabla sin índice): la ganancia aquí es **CPU** (sin
 `date_trunc` por fila). El valor estratégico es que **habilita** el índice (Fase 2) y la
 **poda de particiones** (Fase 3), donde el mismo predicado pasa a leer una fracción de la
 tabla.
 
 #### OPT‑3 — Anti‑join (`NOT IN` → `NOT EXISTS`)
-**Caso.** Job de CSAT: pedidos entregados de un día **sin reseña**.
-**Por qué era apropiado.** `NOT IN (subconsulta)` no puede transformarse en un
+**Caso:** Job de CSAT: pedidos entregados de un día **sin reseña**.
+**Por qué era apropiado:** `NOT IN (subconsulta)` no puede transformarse en un
 anti‑join hash limpio por la semántica con `NULL`; el plan degenera en un `SubPlan`
 con `Materialize` de `order_reviews` **re‑evaluado** (`loops=1270`), con **derrame a
 disco** (`temp read=1.826.039`). `NOT EXISTS` permite un `Parallel Hash Right Anti
 Join`.
-**Resultado.** 21.628 → 79,3 ms (**−99,6 %**, ×273); de 3,40 M bloques compartidos +
+```sql
+-- ANTES
+SELECT count(*) FROM orders o
+WHERE o.order_status = 'delivered' AND o.order_purchase_timestamp >= '2018-05-10'
+  AND o.order_purchase_timestamp < '2018-05-11'
+  AND o.order_id NOT IN (SELECT order_id FROM order_reviews);
+-- DESPUÉS
+SELECT count(*) FROM orders o
+WHERE o.order_status = 'delivered' AND o.order_purchase_timestamp >= '2018-05-10'
+  AND o.order_purchase_timestamp < '2018-05-11'
+  AND NOT EXISTS (SELECT 1 FROM order_reviews r WHERE r.order_id = o.order_id);
+```
+**Resultado:** 21.628 → 79,3 ms (**−99,6 %**, ×273); de 3,40 M bloques compartidos +
 1,83 M temporales a 37 K bloques. Además `NOT EXISTS` es **semánticamente correcto**
 ante `NULL` (evita el resultado vacío sorpresa de `NOT IN`).
 
 #### OPT‑4 — Paginación keyset (vs `OFFSET` profundo)
-**Caso.** Navegar a una página profunda del catálogo.
-**Por qué era apropiado.** `OFFSET 20000 LIMIT 24` **lee y descarta 20.024 filas**
+**Caso:** Navegar a una página profunda del catálogo.
+**Por qué era apropiado:** `OFFSET 20000 LIMIT 24` **lee y descarta 20.024 filas**
 (`Seq Scan` + `top‑N heapsort`) para devolver 24. El método **keyset** (`WHERE
 product_id > :cursor ORDER BY product_id LIMIT 24`) arranca en el cursor usando el
 índice de PK, sin descartar nada. No requiere índices nuevos.
-**Resultado.** 30,1 → 0,036 ms (**−99,9 %**, ×836); 1.215 → 27 bloques. Cambio de plan:
+```sql
+-- ANTES: OFFSET profundo (lee y descarta 20.024 filas)
+SELECT product_id, product_category_name FROM products
+ORDER BY product_id OFFSET 20000 LIMIT 24;
+-- DESPUÉS: keyset (arranca en el cursor de la página anterior)
+SELECT product_id, product_category_name FROM products
+WHERE product_id > :cursor ORDER BY product_id LIMIT 24;
+```
+**Resultado:** 30,1 → 0,036 ms (**−99,9 %**, ×836); 1.215 → 27 bloques. Cambio de plan:
 `Seq Scan + Sort` → `Index Scan using products_pkey`. (El coste de `OFFSET` crece con
 la profundidad de la página; keyset es constante.)
 
@@ -142,6 +238,27 @@ patrón que optimiza (`sql/03_specialized_indexes.sql`, salida en
 `results/03_indexes.txt` y `results/03b_gin_orders.txt`). Todos atacan las consultas
 cuyo cuello es el **camino de acceso** (los Seq Scan detectados en la Fase 1).
 
+Sentencias de creación:
+```sql
+-- IDX-1  B-tree simple (sirve el filtro de Q2 y el join por FK)
+CREATE INDEX idx_customers_unique_id ON customers(customer_unique_id);
+CREATE INDEX idx_orders_customer     ON orders(customer_id);
+-- IDX-2  B-tree compuesto (igualdad + orden de Q4, evita el Sort)
+CREATE INDEX idx_order_items_seller_ts ON order_items(seller_id, order_purchase_timestamp DESC);
+-- IDX-3  B-tree compuesto (filtro + orden de Q5, keyset)
+CREATE INDEX idx_products_category_pid ON products(category_id, product_id);
+-- IDX-4  Parcial (sólo el ~0,5% de Q7)
+CREATE INDEX idx_orders_created_pending ON orders(order_purchase_timestamp)
+    WHERE order_status = 'created';
+-- IDX-5  Parcial (sólo el ~2% pendiente de Q8)
+CREATE INDEX idx_outbox_unprocessed ON outbox_events(created_at)
+    WHERE processed_at IS NULL;
+-- IDX-6  GIN para contención JSONB (@>)
+CREATE INDEX idx_products_specs_gin ON products USING gin (product_specifications jsonb_path_ops);
+-- IDX-7  BRIN para rango temporal sobre tabla append-only (correlación física)
+CREATE INDEX idx_demo_brin ON orders_ts_demo USING brin (order_purchase_timestamp) WITH (pages_per_range = 32);
+```
+
 ### 3.1 Resultados (resumen)
 
 | # | Tipo | Consulta | Antes | Después | Δ Tiempo | Tamaño índice | Cambio de plan |
@@ -157,54 +274,54 @@ cuyo cuello es el **camino de acceso** (los Seq Scan detectados en la Fase 1).
 ### 3.2 Documentación por índice
 
 #### IDX‑1 · B‑tree simple — `customers(customer_unique_id)` + `orders(customer_id)`
-- **Justificación.** Q2 filtra por `customer_unique_id` (no es la PK) y une por
+- **Justificación:** Q2 filtra por `customer_unique_id` (no es la PK) y une por
   `customer_id` (columna FK que PostgreSQL **no indexa automáticamente**). Sin índices
   ambos lados son Seq Scan paralelos.
-- **Patrón que optimiza.** Igualdad selectiva + join 1‑a‑muchos.
-- **Trade‑offs.** Indexar dos `CHAR(32)` sobre 1 M de filas cuesta **90 MB** y encarece
+- **Patrón que optimiza:** Igualdad selectiva + join 1‑a‑muchos.
+- **Trade‑offs:** Indexar dos `CHAR(32)` sobre 1 M de filas cuesta **90 MB** y encarece
   cada `INSERT`/`UPDATE` de `orders`/`customers`. Se justifica por ser una consulta de
   altísima frecuencia (página de cuenta).
-- **Impacto.** 121,1 → 0,31 ms (**×392**); `Parallel Seq Scan` → `Index Scan` en ambos.
+- **Impacto:** 121,1 → 0,31 ms (**×392**); `Parallel Seq Scan` → `Index Scan` en ambos.
 
 #### IDX‑2 · B‑tree compuesto — `order_items(seller_id, order_purchase_timestamp DESC)`
-- **Justificación.** Q4 hace `WHERE seller_id = ? ORDER BY order_purchase_timestamp
+- **Justificación:** Q4 hace `WHERE seller_id = ? ORDER BY order_purchase_timestamp
   DESC LIMIT 50`. Con la **igualdad primero y el orden después**, el índice satisface
   filtro **y** orden, eliminando el `Sort`. El `DESC` evita además invertir el escaneo.
-- **Trade‑offs.** 96 MB (1,5 M filas). Un índice sólo por `seller_id` sería menor pero
+- **Trade‑offs:** 96 MB (1,5 M filas). Un índice sólo por `seller_id` sería menor pero
   dejaría el `Sort`; el compuesto es el equilibrio correcto para este patrón.
-- **Impacto.** 111,5 → 0,44 ms (**×255**); desaparece `Sort` + `Seq Scan`.
+- **Impacto:** 111,5 → 0,44 ms (**×255**); desaparece `Sort` + `Seq Scan`.
 
 #### IDX‑3 · B‑tree compuesto — `products(category_id, product_id)`
-- **Justificación.** Q5 (`WHERE category_id = ? ORDER BY product_id`) se servía por la
+- **Justificación:** Q5 (`WHERE category_id = ? ORDER BY product_id`) se servía por la
   PK con `Filter`, descartando filas. El compuesto agrupa por categoría y deja
   `product_id` ya ordenado (ideal para keyset).
-- **Trade‑offs.** Sólo 2,1 MB (tabla de 32 K); coste de escritura despreciable.
-- **Impacto.** 7,96 → 0,05 ms (**×162**).
+- **Trade‑offs:** Sólo 2,1 MB (tabla de 32 K); coste de escritura despreciable.
+- **Impacto:** 7,96 → 0,05 ms (**×162**).
 
 #### IDX‑4 · Parcial — `orders(order_purchase_timestamp) WHERE order_status='created'`
-- **Justificación.** Q7 sólo consulta el ~0,5 % de pedidos `created`. Un índice
+- **Justificación:** Q7 sólo consulta el ~0,5 % de pedidos `created`. Un índice
   **parcial** indexa exclusivamente esas filas → minúsculo y siempre selectivo; además
   ordena por timestamp (sirve el `ORDER BY`).
-- **Trade‑offs.** **136 kB** frente a ~21 MB de un B‑tree total sobre `order_status`
+- **Trade‑offs:** **136 kB** frente a ~21 MB de un B‑tree total sobre `order_status`
   (≈150× menos espacio y mantenimiento), a cambio de servir **sólo** ese predicado.
-- **Impacto.** 17,2 → 0,49 ms (**×35**); `Parallel Seq Scan` → `Index Scan` parcial.
+- **Impacto:** 17,2 → 0,49 ms (**×35**); `Parallel Seq Scan` → `Index Scan` parcial.
 
 #### IDX‑5 · Parcial — `outbox_events(created_at) WHERE processed_at IS NULL`
-- **Justificación.** El despachador (Q8) sólo lee los ~2 % de eventos pendientes. Es el
+- **Justificación:** El despachador (Q8) sólo lee los ~2 % de eventos pendientes. Es el
   índice del diseño híbrido: el conjunto "caliente" se mantiene diminuto aunque la
   tabla crezca sin límite.
-- **Trade‑offs.** **40 kB**. Al procesarse un evento (`processed_at` deja de ser NULL)
+- **Trade‑offs:** **40 kB**. Al procesarse un evento (`processed_at` deja de ser NULL)
   la fila **sale** del índice → el índice no crece con el histórico.
-- **Impacto.** 16,9 → 0,10 ms (**×176**).
+- **Impacto:** 16,9 → 0,10 ms (**×176**).
 
 #### IDX‑6 · GIN (jsonb_path_ops) — `products(product_specifications)`
-- **Justificación.** El predicado de **contención** `product_specifications @> '{…}'`
+- **Justificación:** El predicado de **contención** `product_specifications @> '{…}'`
   no es indexable por B‑tree; GIN sí. `jsonb_path_ops` es más compacto y rápido que el
   GIN por defecto cuando sólo se usa `@>`.
-- **Patrón que optimiza.** Filtros por atributos semiestructurados (garantía, fragilidad).
-- **Impacto.** Predicado **selectivo** (~2 % = 637 filas): 3,71 → 0,56 ms (**×6,6**);
+- **Patrón que optimiza:** Filtros por atributos semiestructurados (garantía, fragilidad).
+- **Impacto:** Predicado **selectivo** (~2 % = 637 filas): 3,71 → 0,56 ms (**×6,6**);
   `Seq Scan` → `Bitmap Index Scan`. Índice de 176 kB.
-- **Trade‑off de SELECTIVIDAD (clave).** La ventaja de GIN depende de cuántas filas
+- **Trade‑off de SELECTIVIDAD (clave):** La ventaja de GIN depende de cuántas filas
   empareja. Se midió también sobre `orders.metadata @> '{"channel":"app_ios","gift":true}'`
   (~1,3 % de 1 M = 12.790 filas, `results/03b_gin_orders.txt`): a esa selectividad la
   diferencia es **pequeña y depende del estado de caché** —con la tabla cacheada el
@@ -216,16 +333,16 @@ cuyo cuello es el **camino de acceso** (los Seq Scan detectados en la Fase 1).
   B‑tree. Además su escritura es más costosa que la de un B‑tree.
 
 #### IDX‑7 · BRIN vs B‑tree — rango temporal sobre `orders`
-- **Justificación.** Para barridos por rango de fecha sobre una tabla **append‑only**
+- **Justificación:** Para barridos por rango de fecha sobre una tabla **append‑only**
   (los pedidos llegan en orden temporal → alta correlación físico‑lógica), BRIN guarda
   sólo min/máx por bloque‑rango: índice **diminuto**.
-- **Trade‑offs medidos.** **BRIN 32 kB vs B‑tree 21 MB (≈655× menor)** y, en este caso,
+- **Trade‑offs medidos:** **BRIN 32 kB vs B‑tree 21 MB (≈655× menor)** y, en este caso,
   **más rápido** (3,3 vs 9,3 ms: BRIN lee sólo los bloque‑rango relevantes). **Condición
   crítica:** BRIN sólo sirve si el orden físico correlaciona con la columna; por eso se
   midió sobre una copia ordenada que emula el orden natural de `orders` (el generador
   sintético barajó los timestamps). Sin correlación, BRIN degenera y escanea casi toda
   la tabla.
-- **Impacto.** Seq Scan (18,0 ms) → BRIN Bitmap (3,3 ms), pagando **655× menos espacio**
+- **Impacto:** Seq Scan (18,0 ms) → BRIN Bitmap (3,3 ms), pagando **655× menos espacio**
   que un B‑tree.
 
 ### 3.3 Conclusión de la Fase 2
@@ -255,13 +372,31 @@ partición `DEFAULT`, y **migra** el millón de filas con `INSERT … SELECT`. P
 el efecto del particionamiento, **ninguna** de las dos tablas (plana vs particionada)
 tiene índice sobre `order_purchase_timestamp`: la mejora proviene **sólo de la poda**.
 
+```sql
+-- Tabla particionada (la clave de partición forma parte de la PK)
+CREATE TABLE orders_part ( ... , PRIMARY KEY (order_id, order_purchase_timestamp) )
+PARTITION BY RANGE (order_purchase_timestamp);
+-- Particiones mensuales generadas en bucle:
+CREATE TABLE orders_part_2017_06 PARTITION OF orders_part
+    FOR VALUES FROM ('2017-06-01') TO ('2017-07-01');   -- (×26 meses)
+CREATE TABLE orders_part_default PARTITION OF orders_part DEFAULT;  -- red de seguridad
+-- Migración:
+INSERT INTO orders_part SELECT ... FROM orders;
+```
+
 **Validación estructural** (`results/04_partitioning.txt`): 26 particiones de ~38 K
 filas (~8 MB c/u) y la `DEFAULT` con **exactamente 1.000 filas** (las anómalas de 2019),
 confirmando que la red de seguridad funciona.
 
 ### 4.3 Comparación de rendimiento
 
-Barrido por rango de un mes (`order_purchase_timestamp` en junio‑2017):
+Barrido por rango de un mes (`order_purchase_timestamp` en junio‑2017), misma consulta
+contra ambas tablas:
+```sql
+SELECT count(*) FROM <orders | orders_part>
+WHERE order_purchase_timestamp >= TIMESTAMPTZ '2017-06-01'
+  AND order_purchase_timestamp <  TIMESTAMPTZ '2017-07-01';
+```
 
 | Escenario | Plan | Tiempo | Bloques leídos |
 |---|---|---:|---:|
@@ -311,3 +446,20 @@ algorítmica del SQL, los índices arreglan el camino de acceso de las consultas
 el particionamiento acota el volumen barrido y el mantenimiento de la tabla de hechos.
 Todas las métricas son reproducibles (`docker compose up` + `generate_data.py --seed 42`
 + los scripts de `sql/`); las salidas crudas de `EXPLAIN` están en `results/`.
+
+---
+
+## 6. Información completa
+
+El detalle íntegro —scripts SQL, generador de datos, `docker-compose`, capturas crudas de
+`EXPLAIN (ANALYZE, BUFFERS)` e instrucciones de reproducción— está en el repositorio:
+
+**https://github.com/jorge-figueroa-eng/Ecommify-Database-Design** (carpeta `actividad4/`)
+
+| Recurso | Ruta |
+|---|---|
+| Scripts SQL numerados (esquema, consultas, índices, particiones) | `actividad4/sql/` |
+| Generador de datos sintéticos | `actividad4/generate_data.py` |
+| Entorno Docker (PostgreSQL 16 + PostGIS) | `actividad4/docker-compose.yml` |
+| Salidas crudas de `EXPLAIN` | `actividad4/results/` |
+| Guía de reproducción | `actividad4/README.md` |
