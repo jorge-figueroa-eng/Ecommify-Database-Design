@@ -1,0 +1,4 @@
+# Datos sintéticos generados (se reproducen con generate_data.py)
+data/
+# Salidas de EXPLAIN capturadas en crudo (el análisis vive en REPORTE.md)
+results/*.raw.txt
