@@ -83,37 +83,37 @@ Ecommify-Database-Design/
 │   │   ├── products.csv
 │   │   ├── reviews.csv
 │   │   └── sellers.csv
-│   └── queries/                        # Consultas avanzadas y mantenimiento
-│       ├── advanced_types.sql          # Consultas para JSONB, Arrays, Rangos y PostGIS
-│       └── maintenance_jobs.sql        # Estrategia de VACUUM y refresco de vistas
+│   ├── queries/                        # Consultas avanzadas y mantenimiento
+│   │   ├── advanced_types.sql          # Consultas para JSONB, Arrays, Rangos y PostGIS
+│   │   └── maintenance_jobs.sql        # Estrategia de VACUUM y refresco de vistas
+│   └── optimizaciones/                 # Módulo de Optimización y Rendimiento (1.000.000 de órdenes)
+│       ├── docker-compose.yml          # Contenedor local con PostgreSQL 16 + PostGIS
+│       ├── generate_data.py            # Generador de datos sintéticos a gran escala
+│       ├── README.md                   # Guía específica para reproducir las optimizaciones
+│       ├── REPORTE.md                  # Informe detallado de optimizaciones y métricas EXPLAIN ANALYZE
+│       ├── Actividad 4 - Informe Optimizacion.pdf # Reporte formal en formato PDF
+│       ├── sql/                        # Scripts SQL de optimización, índices y particionamiento
+│       │   ├── 00_schema_baseline.sql  # Esquema inicial plano sin optimizaciones
+│       │   ├── 00_load.sql             # Carga masiva de datos sintéticos generados
+│       │   ├── 01_critical_queries.sql # Consultas OLTP críticas bajo análisis
+│       │   ├── 02_query_optimizations.sql # Reescritura y optimización de consultas
+│       │   ├── 03_specialized_indexes.sql # Creación de índices parciales, compuestos y GIN
+│       │   └── 04_partitioning.sql     # Particionamiento declarativo por mes
+│       └── results/                    # Logs de ejecución y planes EXPLAIN del análisis
+│           ├── 00_load.txt
+│           ├── 01_baseline_plans.txt
+│           ├── 02_optimizations.txt
+│           ├── 03_indexes.txt
+│           ├── 03b_gin_orders.txt
+│           └── 04_partitioning.txt
 ├── mongodb/                            # Recursos para MongoDB
 │   └── schema/                         # Esquemas JSON para validación documental
 │       ├── 01_catalogo_enriquecido_schema.json
 │       ├── 02_customer_behavior_schema.json
 │       ├── 03_seller_metrics_schema.json
 │       └── 04_order_reviews_schema.json
-├── notebooks/                          # Análisis exploratorio y pruebas en Python
-│   └── Data_Exploration_Analysis.ipynb
-└── actividad4/                         # Tarea de Optimización y Rendimiento (1.000.000 de órdenes)
-    ├── docker-compose.yml              # Contenedor local con PostgreSQL 16 + PostGIS
-    ├── generate_data.py                # Generador de datos sintéticos a gran escala
-    ├── README.md                       # Guía específica para reproducir las optimizaciones
-    ├── REPORTE.md                      # Informe detallado de optimizaciones y métricas EXPLAIN ANALYZE
-    ├── Actividad 4 - Informe Optimizacion.pdf # Reporte formal en formato PDF
-    ├── sql/                            # Scripts SQL de optimización, índices y particionamiento
-    │   ├── 00_schema_baseline.sql      # Esquema inicial plano sin optimizaciones
-    │   ├── 00_load.sql                 # Carga masiva de datos sintéticos generados
-    │   ├── 01_critical_queries.sql     # Consultas OLTP críticas bajo análisis
-    │   ├── 02_query_optimizations.sql  # Reescritura y optimización de consultas
-    │   ├── 03_specialized_indexes.sql  # Creación de índices parciales, compuestos y GIN
-    │   └── 04_partitioning.sql         # Particionamiento declarativo por mes
-    └── results/                        # Logs de ejecución y planes EXPLAIN del análisis
-        ├── 00_load.txt
-        ├── 01_baseline_plans.txt
-        ├── 02_optimizations.txt
-        ├── 03_indexes.txt
-        ├── 03b_gin_orders.txt
-        └── 04_partitioning.txt
+└── notebooks/                          # Análisis exploratorio y pruebas en Python
+    └── Data_Exploration_Analysis.ipynb
 ```
 
 ---
@@ -123,45 +123,10 @@ Ecommify-Database-Design/
 > [!NOTE]
 > Para la carga básica de desarrollo relacional, puedes importar los CSV ubicados en [postgresql/seed_data/](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/seed_data/) directamente en tu instancia de base de datos Postgres una vez ejecutados los archivos en [postgresql/schema/](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/schema/).
 
-### ⚡ Reproducción de Actividad de Rendimiento y Optimización (Escala 1M órdenes)
+### ⚡ Rendimiento, Pruebas a Gran Escala y Optimización (Escala 1M de órdenes)
 
-Para ejecutar las pruebas de carga a gran escala con un dataset sintético realista de **1 millón de órdenes** y analizar los planes de optimización de consultas (`EXPLAIN ANALYZE`), sigue los pasos descritos en la carpeta de rendimiento:
+El proyecto cuenta con un módulo dedicado para realizar pruebas de rendimiento y optimización con un dataset sintético inflado a 1.000.000 de órdenes en PostgreSQL.
 
-1. **Navegar a la carpeta del módulo de optimización**:
-   ```bash
-   cd actividad4
-   ```
-
-2. **Levantar la base de datos aislada con Docker Compose**:
-   ```bash
-   docker compose up -d
-   ```
-
-3. **Generar los datos sintéticos basados en distribuciones reales**:
-   Generará alrededor de 780 MB de archivos CSV con distribuciones estadísticas de ventas realistas.
-   ```bash
-   python generate_data.py --orders 1000000
-   ```
-
-4. **Ejecutar el esquema inicial de prueba y cargar los datos**:
-   ```bash
-   psql "postgresql://ecommify:ecommify@localhost:5433/ecommify" -f sql/00_schema_baseline.sql
-   psql "postgresql://ecommify:ecommify@localhost:5433/ecommify" -f sql/00_load.sql
-   ```
-
-5. **Aplicar las optimizaciones paso a paso**:
-   Revisa los archivos bajo [actividad4/sql/](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/actividad4/sql/) para comprender las optimizaciones de consultas y particionamiento, y consulta el reporte detallado en [actividad4/REPORTE.md](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/actividad4/REPORTE.md).
-
----
-
-## 🛠️ Resumen de Optimizaciones Logradas (Módulo Actividad 4)
-
-| Tipo de Optimización | Consulta Bajo Análisis | Latencia Inicial (Baseline) | Latencia Optimizada | Factor de Mejora |
-|---|---|---|---|---|
-| **Optimización de Consulta** | Q3 (Búsqueda de Vendedores con Geolocalización) | `611.23 ms` | `37.26 ms` | **16.4x** |
-| **Índice Compuesto** | Q4 (Órdenes Entregadas con Retraso) | `84.81 ms` | `2.13 ms` | **39.8x** |
-| **Índice Parcial** | Q8 (Procesamiento de Outbox Cola Activa) | `10.22 ms` | `0.04 ms` | **255.5x** |
-| **Índice GIN (JSONB)** | Q6 (Búsqueda de Especificaciones de Productos) | `372.10 ms` | `0.11 ms` | **3382.7x** |
-| **Particionamiento Rango** | Q9 (Volumen mensual histórico por canal de pago) | `265.81 ms` | `10.21 ms` (Partition Pruning) | **26.0x** |
-
-Para ver el análisis profundo de cada plan de ejecución con las métricas detalladas de lectura en disco y búferes, consulta el informe en [actividad4/REPORTE.md](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/actividad4/REPORTE.md).
+Para consultar los resultados obtenidos, cómo levantar el entorno y reproducir el análisis, visita el archivo de documentación propio del módulo:
+* 👉 **[README.md de Optimización y Rendimiento](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/README.md)**
+* 📈 **[Reporte Detallado de Planes EXPLAIN ANALYZE](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/REPORTE.md)**
