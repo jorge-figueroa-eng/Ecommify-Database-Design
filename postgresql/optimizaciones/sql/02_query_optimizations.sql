@@ -107,15 +107,15 @@ WHERE o.order_status = 'delivered'
 -- arranca directamente en el cursor (último product_id de la página previa)
 -- usando el índice de PK. No requiere índices nuevos.
 -- =====================================================================
--- Cursor = product_id en la posición 20000 (simula "última fila de la página anterior").
-SELECT product_id AS cursor FROM products ORDER BY product_id OFFSET 20000 LIMIT 1 \gset
+-- Cursor = product_id en la posición 5000 (simula "última fila de la página anterior").
+SELECT product_id AS cursor FROM products ORDER BY product_id OFFSET 5000 LIMIT 1 \gset
 
 \echo '######## OPT-4 BEFORE: deep OFFSET ########'
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT product_id, product_category_name
 FROM products
 ORDER BY product_id
-OFFSET 20000 LIMIT 24;
+OFFSET 5000 LIMIT 24;
 
 \echo '######## OPT-4 AFTER: keyset pagination ########'
 EXPLAIN (ANALYZE, BUFFERS)
