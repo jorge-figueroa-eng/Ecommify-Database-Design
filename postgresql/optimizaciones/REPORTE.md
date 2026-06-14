@@ -1,4 +1,4 @@
-# Actividad 4 — Optimización PostgreSQL para Ecommify
+# Optimización PostgreSQL para Ecommify
 
 Informe de optimización de consultas, índices especializados y particionamiento
 declarativo sobre la **arquitectura híbrida** del proyecto. Todas las métricas son
