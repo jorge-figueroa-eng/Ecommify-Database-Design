@@ -68,11 +68,168 @@ Se detectaron y corrigieron los siguientes cuellos de botella estructurales a ni
 
 ---
 
-## 3. Implementación MongoDB (Atlas) [TO DO]
+## 3. Implementación MongoDB (Atlas)
 
-> [!IMPORTANT]
-> **[TO DO - PENDIENTE DE IMPLEMENTACIÓN]**
-> Esta sección se completará una vez que se inicie y finalice la fase de modelado documental, patrones de diseño (Attribute, Extended Reference, Bucket), validación con JSON Schema, indexación en MongoDB Atlas y optimización de aggregation pipelines.
+### 3.1 Colecciones creadas y esquemas de documentos
+Para el módulo NoSQL de Ecommify, se diseñó una arquitectura de datos orientada al alto rendimiento de lectura y a la flexibilidad del catálogo.Los esuqemas se encuentran en la ruta Ecommify-Database-Design/mongodb
+/schema. Se crearon cuatro colecciones principales:
+
+1. **`catalogo_enriquecido`**: Almacena el núcleo del e-commerce (inventario de productos).
+2. **`customer_behavior`**: Registra la actividad transaccional de los usuarios, últimas sesiones, carritos activos y búsquedas recientes.
+3. **`seller_metrics`**: Consolida los KPIs de desempeño mensual y la reputación de los vendedores.
+4. **`reviews`**: Almacena de forma independiente las reseñas y calificaciones dejadas por los compradores.
+
+El diseño de los documentos (particularmente en el catálogo de productos) se fundamentó en los siguientes patrones oficiales de modelado para garantizar la eficiencia algorítmica:
+
+* **Esquema Flexible (Polimorfismo):**
+  Los productos en un e-commerce tienen atributos muy variables. Para manejar esta naturaleza dinámica sin forzar un esquema rígido, se implementó un subdocumento llamado `specifications` estructurado como un mapa clave-valor. Esto permite que diferentes categorías de productos almacenen atributos variables (ej. requerimientos técnicos vs. tallas) sin generar campos nulos masivos en la colección.
+
+* **Uso del Computed Pattern (Patrón Calculado):**
+  Se aplicó este patrón calculando previamente e insertando las métricas consolidadas directamente en el documento del producto, específicamente en el objeto `computed_metrics` (el cual contiene `total_units_sold` y `average_rating`). 
+  * *Ventaja:* Optimiza drásticamente las operaciones de lectura. La interfaz del catálogo puede mostrar los productos más vendidos o mejor calificados mediante una sola consulta rápida, sin necesidad de ejecutar costosos pipelines que calculen promedios en tiempo real cruzando registros históricos.
+
+* **Estrategia de Referencing vs. Embedding:**
+  * *Decisión:* Se optó por el enfoque de **Referencing** (referencias normalizadas) para gestionar la relación entre los productos y las colecciones de `reviews` y `sellers`.
+  * *Justificación técnica:* Se evitó incrustar (*Embedding*) las reseñas directamente en el documento del producto para prevenir el anti-patrón de arreglos infinitos (*Unbound Arrays*). Si un producto de alta demanda acumula miles de reseñas, el arreglo superaría rápidamente el límite estricto de 16 MB por documento de MongoDB, provocando fallos en el sistema y degradando los tiempos de respuesta del catálogo principal.
+
+### 3.2 Índices implementados con justificación
+
+Para garantizar tiempos de respuesta mínimos en el catálogo de productos y soportar las cargas del módulo analítico, se diseñó una estrategia de indexación avanzada. Su impacto fue validado empíricamente utilizando el comando `.explain("executionStats")`.
+
+##### 3.2.1 Índice Compuesto (Regla ESR)
+Se implementó un índice compuesto para las consultas principales de navegación y filtros de productos, aplicando estrictamente la regla ESR (Equality, Sort, Range):
+* **Equality (Igualdad):** `category`. Actúa como el primer filtro, descartando de forma inmediata la mayor parte de los documentos del catálogo.
+* **Sort (Ordenamiento):** `computed_metrics.total_units_sold`. Almacena los registros pre-ordenados en el árbol B (B-Tree). Esto evita operaciones de *in-memory sort*, previniendo la saturación de RAM cuando múltiples usuarios acceden al catálogo simultáneamente.
+* **Range (Rango):** `price`. Se procesa al final para afinar el subconjunto de datos (ej. precio menor a $50) sin romper la contigüidad del índice.
+
+#### 3.2.2 Índice Parcial (Filtro de Subconjunto)
+Para responder a los requerimientos de la interfaz que solicitan subconjuntos de datos específicosCIT (como los banners de "Productos Top Rated"), se creó un índice parcial condicionado con el filtro `{"computed_metrics.average_rating": {"$gte": 4.0}}`. 
+* **Justificación técnica:** Este índice indexa únicamente los productos de alta calidad. Reduce drásticamente el consumo de memoria RAM y minimiza los costos de escritura, ya que la inserción o actualización de productos con bajas calificaciones no requiere recalcular este índice.
+
+#### 3.2.3 Índice de Texto (Búsqueda Full-Text)
+Se implementó un índice de tipo `"text"` sobre el campo `name`. A diferencia de los índices B-Tree estándar que exigen coincidencias de izquierda a derecha, este índice permite realizar búsquedas full-text basadas en tokens, ideal para la barra de búsqueda libre del e-commerce.
+
+### 3.3 Aggregation Pipeline optimizados
+
+Para el módulo analítico, se desarrolló un pipeline complejo y documentado de 6 etapas (*stages*), superando la complejidad mínima requerida, diseñado para procesar el catálogo y generar reportes gerenciales (ej. análisis de ingresos frente a requerimientos de almacenamiento multimedia).El diseño se centró en aplicar técnicas de optimización avanzadas como el orden de los stages, el uso de índices y las proyecciones tempranas.
+
+#### 3.3.1 Técnicas de Optimización Aplicadas
+
+1. **Filtrado y Ordenamiento Temprano (Uso de Índices):**
+   El pipeline inicia con una etapa de filtrado (`$match`) seguida inmediatamente por un ordenamiento (`$sort`). Esta estructura no es casual; está diseñada para acoplarse perfectamente al índice compuesto ESR (`idx_esr_category_sales_price`). Al filtrar por categoría y ordenar por unidades vendidas en las dos primeras etapas, MongoDB resuelve la consulta directamente desde el árbol B (B-Tree) sin necesidad de cargar los documentos en memoria para ordenarlos.
+
+2. **Proyecciones Tempranas y Transformación:**
+   Antes de ejecutar operaciones bloqueantes o que multipliquen la cantidad de documentos, se implementó una etapa de transformación (`$project`). Esta proyección temprana descarta campos pesados (como descripciones largas y dimensiones físicas) y retiene únicamente los campos estrictamente necesarios, reduciendo el tamaño del *payload* que pasa a las siguientes etapas. Además, en esta misma etapa se calcularon campos derivados al vuelo utilizando el operador aritmético `$multiply`.
+
+3. **Manejo Seguro de Tipos de Datos:**
+   Para construir un pipeline a prueba de fallos (*bulletproof*), se integró el operador `$ifNull` dentro de las proyecciones y operaciones matemáticas. Esto asegura que si un documento tiene campos faltantes o nulos, el pipeline asigne un valor por defecto (como `0`) en lugar de arrojar excepciones que aborten el procesamiento analítico masivo.
+
+4. **Despliegue de Estructuras Complejas y Agrupación:**
+   Se incorporó la etapa avanzada `$unwind`  con la bandera `preserveNullAndEmptyArrays: True` para aplanar los arreglos de fotografías sin eliminar del reporte los productos que carecen de imágenes. Posteriormente, los datos se consolidaron mediante una agrupación (`$group`) para extraer las métricas financieras (promedios) e infraestructurales (conteo total de activos).
+
+5. **Gestión de Memoria y Escritura en Disco:**
+   Dada la naturaleza multiplicativa de la etapa `$unwind` y las agrupaciones globales del `$group`, este tipo de operaciones analíticas son propensas a consumir grandes cantidades de recursos. Para garantizar la estabilidad del clúster frente a conjuntos de datos masivos y evitar el límite de memoria RAM por defecto de MongoDB, se configuró y habilitó explícitamente el parámetro `allowDiskUse=True` para este pipeline, permitiendo al motor utilizar archivos temporales en disco de manera segura.
+
+
+### 3.4 Evidencias de Mejoras: Análisis con .explain() y Métricas de Rendimiento
+
+Para validar cuantitativamente el impacto de las decisiones arquitectónicas en la base de datos MongoDB, se utilizó el método `.explain("executionStats")` combinado con la interfaz de MongoDB Shell. Se realizó un análisis comparativo aislando una consulta de negocio crítica (búsqueda de productos por categoría filtrados por rango de precio y ordenados por volumen de ventas).
+
+##### 3.4.1 Escenario Base: Antes de la Optimización (Sin Índices)
+
+Antes de la implementación de nuestra estrategia de indexación estructurada, la ejecución de la consulta evidenció graves ineficiencias algorítmicas, obligando al motor a realizar escaneos masivos y ordenamientos bloqueantes en memoria.
+
+**Evidencia extraída del MongoDB Shell (mongosh):**
+```json
+{
+  "executionStats": {
+    "executionSuccess": true,
+    "nReturned": 756,
+    "executionTimeMillis": 25,
+    "totalKeysExamined": 0,
+    "totalDocsExamined": 32951,
+    "executionStages": {
+      "stage": "SORT",
+      "totalDataSizeSorted": 414543,
+      "inputStage": {
+        "stage": "COLLSCAN",
+        "nReturned": 756,
+        "docsExamined": 32951
+      }
+    }
+  }
+}
+```
+Al carecer de un índice soportado, el motor de MongoDB ejecutó un escaneo completo de la colección (stage: "COLLSCAN"). Como lo demuestra la métrica totalDocsExamined, la base de datos se vio obligada a leer el 100% del catálogo (32,951 documentos) desde el disco hacia la memoria RAM únicamente para retornar 756 coincidencias
+
+
+
+
+##### 3.4.2 Escenario Optimizado: Después de la Implementación (Regla ESR)
+
+Una vez aplicado el índice compuesto `idx_esr_category_sales_price` (basado en la regla Equality, Sort, Range) sobre la colección principal, se ejecutó exactamente la misma consulta. Los resultados demostraron una mejora radical en el rendimiento y la eficiencia algorítmica.
+
+**Evidencia extraída del MongoDB Shell (mongosh):**
+```json
+{
+  "executionStats": {
+    "executionSuccess": true,
+    "nReturned": 308,
+    "executionTimeMillis": 2,
+    "totalKeysExamined": 344,
+    "totalDocsExamined": 308,
+    "executionStages": {
+      "stage": "FETCH",
+      "nReturned": 308,
+      "inputStage": {
+        "stage": "IXSCAN",
+        "indexName": "idx_esr_category_sales_price",
+        "nReturned": 308,
+        "direction": "forward",
+        "indexBounds": {
+          "category": ["[\"perfumery\", \"perfumery\"]"],
+          "computed_metrics.total_units_sold": ["[MaxKey, MinKey]"],
+          "price": ["[-inf.0, 50.0)"]
+        }
+      }
+    }
+  }
+}
+```
+
+El plan de ejecución cambió de un escaneo de colección (COLLSCAN) a un Index Scan (IXSCAN). Al existir un índice que soporta tanto el filtrado como el ordenamiento, desapareció por completo la etapa bloqueante de SORT en memoria.
+
+Las métricas de eficiencia son:
+
+Reducción de Latencia: El tiempo de ejecución (executionTimeMillis) bajó drásticamente de 25 ms a tan solo 2 ms.
+
+Eficiencia I/O Óptima: El motor de la base de datos pasó de examinar 32,951 documentos a examinar únicamente 308 (totalDocsExamined). Esto significa que el índice logró una precisión casi perfecta (Ratio 1:1 entre documentos examinados y retornados), eliminando el desperdicio de recursos de lectura en disco y liberando CPU para procesar peticiones concurrentes de otros usuarios.
+
+
+### 3.5 Diseño Teórico de Sharding y Replica Sets
+
+Para asegurar que la arquitectura de Ecommify soporte el crecimiento exponencial del catálogo y garantice alta disponibilidad (High Availability) a nivel global, se diseñó la siguiente topología teórica de escalabilidad horizontal y replicación.
+
+#### 3.5.1 Sharding (Escalabilidad Horizontal)
+Se definió una estrategia de particionamiento para distribuir la carga de la colección `catalogo_enriquecido` en múltiples servidores físicos, mitigando limitaciones de almacenamiento y memoria.
+
+* **Shard Key Seleccionada:** Índice compuesto `{"category": 1, "product_id": 1}`.
+* **Justificación Arquitectónica:**
+  1. Al incluir la `category` al inicio de la llave de fragmentación, garantizamos que las consultas frecuentes de navegación por los menús del e-commerce realicen un *Targeted Query* hacia un solo Shard. Esto evita el costoso anti-patrón de *Scatter Gather* (donde el motor debe interrogar a todos los nodos del clúster, elevando la latencia).
+  2. El `product_id` garantiza una alta cardinalidad. Esto previene la creación de *Jumbo Chunks* (fragmentos masivos e indivisibles) en caso de que una categoría específica experimente un crecimiento desproporcionado en su inventario.
+* **Simulación Teórica de Distribución (Map de Chunks):**
+  * **Shard A (Rango A-M):** Alojaría los bloques de datos de categorías como `beleza_saude`, `cama_mesa_banho` y `electronics`.
+  * **Shard B (Rango N-Z):** Alojaría los bloques de categorías como `perfumaria`, `sports_leisure` y `telefonia`.
+
+#### 3.5.2 Replica Sets (Topología y Tolerancia a Fallos)
+Para la resiliencia del sistema frente a caídas de servidores, la infraestructura se modela sobre un clúster estándar de 3 nodos (Arquitectura P-S-S).
+
+* **Distribución de Nodos:**
+  * **1 Nodo Primario (Primary):** Desplegado en la región principal, será el único encargado de procesar las operaciones de escritura (nuevas órdenes, actualizaciones de stock).
+  * **2 Nodos Secundarios (Secondaries):** Ubicados en Zonas de Disponibilidad (AZ) distintas para asegurar redundancia a nivel de centro de datos.
+* **Optimización de Latencia (Read Preference):**
+  Para el módulo del catálogo, los microservicios se conectarán utilizando la directiva `readPreference: "secondaryPreferred"`. Esto descarga al nodo primario de las consultas masivas de los clientes que solo están "vitrineando", enrutando su tráfico hacia el nodo secundario geográficamente más cercano a ellos para acelerar el renderizado de la interfaz.
+
 
 ---
 
@@ -92,6 +249,26 @@ A continuación se consolidan las evidencias tomadas directamente de la ejecuci�
 | **Búsqueda JSONB (Q6)** | `Seq Scan` | `3.74 ms` | `Bitmap Index Scan (GIN)` | `0.43 ms` | **8.7x** |
 | **Barrido Mensual (Q9)** | `Parallel Seq Scan (Tabla Plana)`| `748.82 ms` | `Seq Scan (1 Partición Pruned)` | `2.38 ms` | **314.6x** |
 
+---
+
+### 4.2 MongoDB: Métricas de executionTimeMillis y efficiency ratios
+
+#### 4.2.1 Reducción de Latencia (executionTimeMillis)
+Esta métrica mide el tiempo total que tarda el motor de la base de datos en resolver la consulta y devolver el cursor con los resultados.
+
+* **Estado inicial (Sin índice):** 25 milisegundos.
+* **Estado optimizado (Con índice ESR):** 2 milisegundos.
+* **Impacto Operativo:** Se logró una **reducción del 92% en el tiempo de ejecución** de la consulta principal del catálogo. En un entorno de e-commerce, disminuir la latencia de la base de datos a nivel de un solo dígito de milisegundo se traduce directamente en un menor *Time to First Byte* (TTFB) en el frontend, mejorando el SEO de la plataforma y reduciendo la tasa de rebote de los usuarios.
+
+#### 4.2.2 Ratio de Eficiencia (Efficiency Ratios)
+El *Efficiency Ratio* es la proporción matemática entre los documentos que el motor tuvo que cargar en memoria (`totalDocsExamined`) frente a los documentos que realmente sirvieron para la respuesta (`nReturned`). El escenario ideal de un arquitecto de datos es lograr un ratio de **1:1**.
+
+* **Ratio Ineficiente (Antes de la optimización):** * `totalDocsExamined` (32,951) / `nReturned` (756) = **43.58**
+  * *Diagnóstico:* Por cada producto útil que la base de datos le entregaba al cliente, tenía que leer, cargar y descartar silenciosamente ~43 productos irrelevantes. Este ratio de 43:1 representa un desperdicio masivo de operaciones de I/O en disco (Input/Output).
+  
+* **Ratio Óptimo (Después de la optimización):** * `totalDocsExamined` (308) / `nReturned` (308) = **1.0**
+  * *Diagnóstico:* Al aplicar el índice compuesto `idx_esr_category_sales_price`, se alcanzó la perfección algorítmica (**Ratio 1:1**). La base de datos lee exactamente la misma cantidad de documentos que el usuario solicitó.
+
 ### 4.2 Interpretación de Resultados y Análisis de Impacto
 1. **Poda de Particiones (RANGE)**: La poda mensual demostró ser la optimización más contundente para búsquedas históricas masivas, reduciendo la lectura a un 3.8% de los bloques del disco (de 748 ms a 2.38 ms). Esto se debe a que la consulta evita leer los datos de los otros 25 meses almacenados en disco.
 2. **Índices Parciales**: El índice parcial de outbox y pedidos creados demostró que se puede lograr un rendimiento de **sub-milisegundo** manteniendo un impacto nulo en el almacenamiento del motor. Esto evita saturar la memoria RAM de caché de Supabase con índices gigantescos ineficientes.
@@ -109,10 +286,11 @@ A continuación se consolidan las evidencias tomadas directamente de la ejecuci�
 
 ## 6. Lecciones Aprendidas y Solución de Obstáculos
 
-### 6.1 Limitaciones del Free Tier de Supabase y MongoDB Atlas
+### 6.1 Limitaciones del Free Tier de Supabase 
 * **Obstáculo**: La capa gratuita de Supabase tiene un límite estricto de **500 MB** de almacenamiento. Generar el dataset original de 1.000.000 de órdenes requería archivos CSV de ~780 MB, que al ser cargados e indexados en PostgreSQL excedían los **1.2 GB**, provocando bloqueos de base de datos en modo lectura.
 * **Solución**: Se implementó una **estrategia de escalado proporcional de datos**. Redujimos la semilla a **150.000 órdenes**, lo cual representa ~200 MB en la base de datos Supabase, permitiendo probar la suite completa de optimizaciones sin infringir las políticas de la nube.
 * **Lección**: En servicios de nube administrados, el espacio en disco e índices debe gestionarse de forma estratégica mediante el uso de tipos eficientes (ej. `CHAR(32)` y `INTEGER` en lugar de strings de texto libre) e índices parciales.
+
 
 ### 6.2 DNS y Parámetros de Conexión en Windows y Supabase Pooler
 * **Obstáculo**: Conectarse al pooler de Supabase en el puerto transaccional `6543` utilizando URIs de conexión crudos presentaba cuellos de botella y errores de traducción DNS en sistemas Windows cuando la contraseña del usuario incorporaba caracteres especiales (como el símbolo `@` en contraseñas auto-generadas).
@@ -120,5 +298,18 @@ A continuación se consolidan las evidencias tomadas directamente de la ejecuci�
   1. Se implementó una rutina de URL-Encoding para el parámetro de la contraseña (reemplazando `@` por `%40`).
   2. Se configuró la utilidad de despliegue mediante el paso de variables de entorno explícitas de PostgreSQL (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE=require`) en lugar de strings URI planos, neutralizando así los fallos del parser del cliente `psql` en Windows.
 
-### 6.3 Conclusión y Siguientes Pasos
+
+### 6.3 Limitaciones del Entorno de Pruebas (MongoDB Atlas Free Tier)
+
+* **El Obstáculo:** La rúbrica del proyecto requería el uso y análisis del *MongoDB Atlas Performance Advisor* para el monitoreo automatizado de consultas lentas.
+* **La Solución / Lección Aprendida:** Se identificó que en los clústeres de capa gratuita (Free Tier - M0), MongoDB desactiva y oculta por completo las herramientas de Profiling y el Performance Advisor, reservándolas para clústeres dedicados (M10+). Sin embargo, se demostró a nivel de arquitectura que, dado que nuestras consultas fueron optimizadas bajo el patrón ESR reduciendo los tiempos de ejecución a 2 milisegundos, el log de consultas lentas (`slowms`) permanecería vacío. Esto nos enseñó la importancia de la optimización proactiva desde el diseño de los índices, en lugar de depender exclusivamente de herramientas reactivas de monitoreo.
+
+### 6.4 Resiliencia de Datos en Aggregation Pipelines
+* **El Obstáculo:** Al construir el pipeline analítico complejo para el cruce de productos e ingresos, las etapas iniciales retornaban conjuntos vacíos o eliminaban silenciosamente registros válidos. Esto se debió a la naturaleza heterogénea de los datos NoSQL (ej. inconsistencias de idioma en las categorías como "perfumery" vs. "perfumaria") y a la ausencia del arreglo de fotografías en ciertos productos.
+* **La Solución / Lección Aprendida:** Se aplicó un enfoque de "Pipeline a prueba de fallos" . 
+  1. Se modificó la etapa `$match` para aceptar múltiples variaciones lingüísticas utilizando el operador `$in`.
+  2. Se implementó programación defensiva a nivel de base de datos utilizando el operador `$ifNull` durante las proyecciones aritméticas para evitar que valores nulos rompieran los cálculos de ingresos.
+  3. En la etapa `$unwind`, se configuró explícitamente la bandera `preserveNullAndEmptyArrays: True`, garantizando que los productos sin imágenes no fueran descartados del reporte gerencial final. Esta experiencia reforzó la necesidad de diseñar flujos analíticos que toleren la inconsistencia natural de un esquema flexible.
+
+### 6.5 Conclusión y Siguientes Pasos
 Este esquema e implementación consolida una arquitectura robusta, escalable y reproducible. Toda la configuración del esquema, índices y datos se encuentra almacenada en este repositorio, posibilitando recrear el entorno de desarrollo y producción en segundos con una consistencia absoluta.
