@@ -109,6 +109,5 @@ evidences/mongodb/explain_after/
 
 ## 8. Entregables finales
 
-- Documento tecnico: `docs/Etapa_2_Documento_Tecnico.md` o `.docx`.
-- Repositorio GitHub actualizado con esta estructura.
-- Video de 5 a 10 minutos siguiendo `docs/video_demo_script.md`.
+- Documento tecnico: `actividad5/DOCUMENTO_TECNICO.md`.
+
