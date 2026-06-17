@@ -1,0 +1,38 @@
+<svg width="750" height="650" viewBox="0 0 750 650" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="#0f172a" rx="10"/>
+  <text x="30" y="35" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="18" font-weight="bold">Efecto de Índices Especializados - Escala Logarítmica</text>
+  <text x="205" y="85" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="end">IDX-1 (Q2 History)</text>
+  <rect x="220" y="60" width="354.46" height="25" fill="#f87171" rx="4"/>
+  <text x="582.4587546141247" y="77" fill="#fca5a5" font-family="system-ui, sans-serif" font-size="11" font-weight="600">882.95 ms</text>
+  <rect x="220" y="89" width="191.76" height="25" fill="#34d399" rx="4"/>
+  <text x="419.7641144866428" y="106" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="11" font-weight="600">4.740 ms (186x speedup)</text>
+  <text x="205" y="180" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="end">IDX-2 (Q4 Seller Items)</text>
+  <rect x="220" y="155" width="364.18" height="25" fill="#f87171" rx="4"/>
+  <text x="592.1781887628215" y="172" fill="#fca5a5" font-family="system-ui, sans-serif" font-size="11" font-weight="600">1206.58 ms</text>
+  <rect x="220" y="184" width="218.14" height="25" fill="#34d399" rx="4"/>
+  <text x="446.13578409942204" y="201" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="11" font-weight="600">11.060 ms (109x speedup)</text>
+  <text x="205" y="275" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="end">IDX-3 (Q5 Cat Browse)</text>
+  <rect x="220" y="250" width="304.86" height="25" fill="#f87171" rx="4"/>
+  <text x="532.8590096442258" y="267" fill="#fca5a5" font-family="system-ui, sans-serif" font-size="11" font-weight="600">179.41 ms</text>
+  <rect x="220" y="279" width="191.03" height="25" fill="#34d399" rx="4"/>
+  <text x="419.03330435628664" y="296" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="11" font-weight="600">4.630 ms (39x speedup)</text>
+  <text x="205" y="370" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="end">IDX-4 (Q7 Approval)</text>
+  <rect x="220" y="345" width="328.27" height="25" fill="#f87171" rx="4"/>
+  <text x="556.2718357673779" y="362" fill="#fca5a5" font-family="system-ui, sans-serif" font-size="11" font-weight="600">380.66 ms</text>
+  <rect x="220" y="374" width="156.37" height="25" fill="#34d399" rx="4"/>
+  <text x="384.36545713604204" y="391" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="11" font-weight="600">1.520 ms (250x speedup)</text>
+  <text x="205" y="465" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="end">IDX-5 (Q8 Outbox Poll)</text>
+  <rect x="220" y="440" width="301.58" height="25" fill="#f87171" rx="4"/>
+  <text x="529.5837704750335" y="457" fill="#fca5a5" font-family="system-ui, sans-serif" font-size="11" font-weight="600">161.49 ms</text>
+  <rect x="220" y="469" width="133.96" height="25" fill="#34d399" rx="4"/>
+  <text x="361.96160658071994" y="486" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="11" font-weight="600">0.740 ms (220x speedup)</text>
+  <text x="205" y="560" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12" font-weight="600" text-anchor="end">IDX-6 (GIN JSONB)</text>
+  <rect x="220" y="535" width="184.39" height="25" fill="#f87171" rx="4"/>
+  <text x="412.3891314910344" y="552" fill="#fca5a5" font-family="system-ui, sans-serif" font-size="11" font-weight="600">3.74 ms</text>
+  <rect x="220" y="564" width="117.07" height="25" fill="#34d399" rx="4"/>
+  <text x="345.06523931653703" y="581" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="11" font-weight="600">0.430 ms (8.7x speedup)</text>
+  <circle cx="500" cy="30" r="6" fill="#f87171"/>
+  <text x="512" y="34" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12">Antes (Línea Base)</text>
+  <circle cx="630" cy="30" r="6" fill="#34d399"/>
+  <text x="642" y="34" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12">Optimizado</text>
+</svg>

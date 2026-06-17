@@ -1,332 +1,348 @@
+El despliegue de duración está desactivado.
+El paginador no se usará.
+DROP INDEX
+DROP INDEX
 ######## IDX-1 BEFORE (Q2 customer history) ########
-                                                                    QUERY PLAN                                                                     
----------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=54614.80..54615.03 rows=2 width=50) (actual time=119.339..121.004 rows=11 loops=1)
-   Buffers: shared hit=274 read=43050
-   ->  Gather Merge  (cost=54614.80..54615.03 rows=2 width=50) (actual time=119.338..121.002 rows=11 loops=1)
-         Workers Planned: 2
-         Workers Launched: 2
-         Buffers: shared hit=274 read=43050
-         ->  Sort  (cost=53614.77..53614.78 rows=1 width=50) (actual time=117.133..117.135 rows=4 loops=3)
-               Sort Key: o.order_purchase_timestamp DESC
-               Sort Method: quicksort  Memory: 25kB
-               Buffers: shared hit=274 read=43050
-               Worker 0:  Sort Method: quicksort  Memory: 25kB
-               Worker 1:  Sort Method: quicksort  Memory: 25kB
-               ->  Parallel Hash Join  (cost=21602.35..53614.76 rows=1 width=50) (actual time=61.424..117.086 rows=4 loops=3)
-                     Hash Cond: (o.customer_id = c.customer_id)
-                     Buffers: shared hit=196 read=43050
-                     ->  Parallel Seq Scan on orders o  (cost=0.00..30918.67 rows=416667 width=83) (actual time=0.043..54.469 rows=333333 loops=3)
-                           Buffers: shared hit=96 read=26656
-                     ->  Parallel Hash  (cost=21602.33..21602.33 rows=1 width=33) (actual time=44.009..44.010 rows=4 loops=3)
-                           Buckets: 1024  Batches: 1  Memory Usage: 104kB
-                           Buffers: shared read=16394
-                           ->  Parallel Seq Scan on customers c  (cost=0.00..21602.33 rows=1 width=33) (actual time=10.180..43.952 rows=4 loops=3)
-                                 Filter: (customer_unique_id = '699004a8a651aead4a580a420f615852'::bpchar)
-                                 Rows Removed by Filter: 333330
-                                 Buffers: shared read=16394
- Planning:
-   Buffers: shared hit=234 read=17
- Planning Time: 1.535 ms
- Execution Time: 121.065 ms
-(28 rows)
-
-######## IDX-1 AFTER ########
-                                                                        QUERY PLAN                                                                        
-----------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=41.86..41.87 rows=3 width=50) (actual time=0.299..0.300 rows=11 loops=1)
-   Buffers: shared hit=12 read=46
-   ->  Sort  (cost=41.86..41.87 rows=3 width=50) (actual time=0.298..0.299 rows=11 loops=1)
-         Sort Key: o.order_purchase_timestamp DESC
-         Sort Method: quicksort  Memory: 26kB
-         Buffers: shared hit=12 read=46
-         ->  Nested Loop  (cost=0.85..41.83 rows=3 width=50) (actual time=0.059..0.294 rows=11 loops=1)
-               Buffers: shared hit=12 read=46
-               ->  Index Scan using idx_customers_unique_id on customers c  (cost=0.42..16.48 rows=3 width=33) (actual time=0.029..0.078 rows=11 loops=1)
-                     Index Cond: (customer_unique_id = '699004a8a651aead4a580a420f615852'::bpchar)
-                     Buffers: shared read=14
-               ->  Index Scan using idx_orders_customer on orders o  (cost=0.42..8.44 rows=1 width=83) (actual time=0.019..0.019 rows=1 loops=11)
-                     Index Cond: (customer_id = c.customer_id)
-                     Buffers: shared hit=12 read=32
- Planning:
-   Buffers: shared hit=54 read=7
- Planning Time: 0.230 ms
- Execution Time: 0.309 ms
-(18 rows)
-
----- IDX-1 sizes ----
-           idx           | size  
--------------------------+-------
- idx_customers_unique_id | 34 MB
- idx_orders_customer     | 56 MB
-(2 rows)
-
-######## IDX-2 BEFORE (Q4 seller items) ########
                                                                      QUERY PLAN                                                                     
 ----------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=41924.88..42346.85 rows=50 width=89) (actual time=110.278..111.486 rows=50 loops=1)
-   Buffers: shared hit=142 read=33296
-   ->  Nested Loop  (cost=41924.88..46102.38 rows=495 width=89) (actual time=110.276..111.482 rows=50 loops=1)
-         Buffers: shared hit=142 read=33296
-         ->  Gather Merge  (cost=41924.46..41982.11 rows=495 width=80) (actual time=110.198..110.238 rows=50 loops=1)
-               Workers Planned: 2
-               Workers Launched: 2
-               Buffers: shared hit=78 read=33160
-               ->  Sort  (cost=40924.43..40924.95 rows=206 width=80) (actual time=108.725..108.730 rows=131 loops=3)
-                     Sort Key: oi.order_purchase_timestamp DESC
-                     Sort Method: quicksort  Memory: 46kB
-                     Buffers: shared hit=78 read=33160
-                     Worker 0:  Sort Method: quicksort  Memory: 47kB
-                     Worker 1:  Sort Method: quicksort  Memory: 44kB
-                     ->  Parallel Seq Scan on order_items oi  (cost=0.00..40916.52 rows=206 width=80) (actual time=1.119..108.590 rows=192 loops=3)
-                           Filter: (seller_id = 'e08596db1d8709660710d430f071d879'::bpchar)
-                           Rows Removed by Filter: 496258
-                           Buffers: shared read=33160
-         ->  Index Scan using orders_pkey on orders o  (cost=0.42..8.32 rows=1 width=50) (actual time=0.024..0.024 rows=1 loops=50)
-               Index Cond: ((order_id = oi.order_id) AND (order_purchase_timestamp = oi.order_purchase_timestamp))
-               Buffers: shared hit=64 read=136
+ Limit  (cost=9708.95..9709.07 rows=1 width=50) (actual time=734.207..882.147 rows=0 loops=1)
+   Buffers: shared hit=98 read=2439
+   ->  Gather Merge  (cost=9708.95..9709.07 rows=1 width=50) (actual time=734.205..882.144 rows=0 loops=1)
+         Workers Planned: 1
+         Workers Launched: 1
+         Buffers: shared hit=98 read=2439
+         ->  Sort  (cost=8708.94..8708.95 rows=1 width=50) (actual time=439.141..439.462 rows=0 loops=2)
+               Sort Key: o.order_purchase_timestamp DESC
+               Sort Method: quicksort  Memory: 25kB
+               Buffers: shared hit=98 read=2439
+               Worker 0:  Sort Method: quicksort  Memory: 25kB
+               ->  Parallel Hash Join  (cost=3562.95..8708.93 rows=1 width=50) (actual time=437.767..438.088 rows=0 loops=2)
+                     Hash Cond: (o.customer_id = c.customer_id)
+                     Buffers: shared hit=54 read=2439
+                     ->  Parallel Seq Scan on orders o  (cost=0.00..4914.35 rows=88235 width=83) (never executed)
+                     ->  Parallel Hash  (cost=3562.94..3562.94 rows=1 width=33) (actual time=436.413..436.415 rows=0 loops=2)
+                           Buckets: 1024  Batches: 1  Memory Usage: 0kB
+                           Buffers: shared hit=21 read=2439
+                           ->  Parallel Seq Scan on customers c  (cost=0.00..3562.94 rows=1 width=33) (actual time=435.818..435.819 rows=0 loops=2)
+                                 Filter: (customer_unique_id = '699004a8a651aead4a580a420f615852'::bpchar)
+                                 Rows Removed by Filter: 75000
+                                 Buffers: shared hit=21 read=2439
  Planning:
-   Buffers: shared hit=75 read=16 dirtied=1
- Planning Time: 0.732 ms
- Execution Time: 111.509 ms
-(25 rows)
+   Buffers: shared hit=27 dirtied=1
+ Planning Time: 4.440 ms
+ Execution Time: 882.947 ms
+(26 filas)
 
-######## IDX-2 AFTER ########
-                                                                         QUERY PLAN                                                                          
--------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.98..618.79 rows=50 width=89) (actual time=0.034..0.429 rows=50 loops=1)
-   Buffers: shared hit=200 read=54
-   ->  Nested Loop  (cost=0.98..6105.01 rows=494 width=89) (actual time=0.034..0.427 rows=50 loops=1)
-         Buffers: shared hit=200 read=54
-         ->  Index Scan using idx_order_items_seller_ts on order_items oi  (cost=0.55..1993.18 rows=494 width=80) (actual time=0.026..0.279 rows=50 loops=1)
-               Index Cond: (seller_id = 'e08596db1d8709660710d430f071d879'::bpchar)
-               Buffers: shared read=54
-         ->  Index Scan using orders_pkey on orders o  (cost=0.42..8.32 rows=1 width=50) (actual time=0.003..0.003 rows=1 loops=50)
+CREATE INDEX
+CREATE INDEX
+ANALYZE
+ANALYZE
+######## IDX-1 AFTER ########
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=9.06..9.06 rows=2 width=50) (actual time=4.673..4.675 rows=0 loops=1)
+   Buffers: shared read=3
+   ->  Sort  (cost=9.06..9.06 rows=2 width=50) (actual time=4.672..4.673 rows=0 loops=1)
+         Sort Key: o.order_purchase_timestamp DESC
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: shared read=3
+         ->  Nested Loop  (cost=0.84..9.05 rows=2 width=50) (actual time=4.666..4.667 rows=0 loops=1)
+               Buffers: shared read=3
+               ->  Index Scan using idx_customers_unique_id on customers c  (cost=0.42..3.75 rows=2 width=33) (actual time=4.665..4.665 rows=0 loops=1)
+                     Index Cond: (customer_unique_id = '699004a8a651aead4a580a420f615852'::bpchar)
+                     Buffers: shared read=3
+               ->  Index Scan using idx_orders_customer on orders o  (cost=0.42..2.64 rows=1 width=83) (never executed)
+                     Index Cond: (customer_id = c.customer_id)
+ Planning:
+   Buffers: shared hit=60 read=8
+ Planning Time: 20.048 ms
+ Execution Time: 4.737 ms
+(17 filas)
+
+---- IDX-1 sizes ----
+           idx           |  size   
+-------------------------+---------
+ idx_customers_unique_id | 5288 kB
+ idx_orders_customer     | 8672 kB
+(2 filas)
+
+DROP INDEX
+######## IDX-2 BEFORE (Q4 seller items) ########
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=7647.68..7780.55 rows=50 width=89) (actual time=1074.318..1206.503 rows=50 loops=1)
+   Buffers: shared hit=5155 read=84
+   ->  Nested Loop  (cost=7647.68..8234.99 rows=221 width=89) (actual time=1074.317..1206.487 rows=50 loops=1)
+         Buffers: shared hit=5155 read=84
+         ->  Gather Merge  (cost=7647.26..7672.45 rows=221 width=80) (actual time=1074.240..1195.581 rows=50 loops=1)
+               Workers Planned: 1
+               Workers Launched: 1
+               Buffers: shared hit=4955 read=84
+               ->  Sort  (cost=6647.25..6647.57 rows=130 width=80) (actual time=830.983..830.994 rows=61 loops=2)
+                     Sort Key: oi.order_purchase_timestamp DESC
+                     Sort Method: quicksort  Memory: 39kB
+                     Buffers: shared hit=4955 read=84
+                     Worker 0:  Sort Method: quicksort  Memory: 34kB
+                     ->  Parallel Seq Scan on order_items oi  (cost=0.00..6642.68 rows=130 width=80) (actual time=3.924..829.935 rows=116 loops=2)
+                           Filter: (seller_id = 'e08596db1d8709660710d430f071d879'::bpchar)
+                           Rows Removed by Filter: 111587
+                           Buffers: shared hit=4916 read=84
+         ->  Index Scan using orders_pkey on orders o  (cost=0.42..2.55 rows=1 width=50) (actual time=0.216..0.216 rows=1 loops=50)
                Index Cond: ((order_id = oi.order_id) AND (order_purchase_timestamp = oi.order_purchase_timestamp))
                Buffers: shared hit=200
  Planning:
-   Buffers: shared hit=66 read=1
- Planning Time: 0.155 ms
- Execution Time: 0.437 ms
-(14 rows)
+   Buffers: shared hit=25
+ Planning Time: 5.311 ms
+ Execution Time: 1206.577 ms
+(24 filas)
+
+CREATE INDEX
+ANALYZE
+######## IDX-2 AFTER ########
+                                                                         QUERY PLAN                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.84..183.42 rows=50 width=89) (actual time=6.546..9.376 rows=50 loops=1)
+   Buffers: shared hit=250 read=4
+   ->  Nested Loop  (cost=0.84..811.48 rows=222 width=89) (actual time=6.544..9.364 rows=50 loops=1)
+         Buffers: shared hit=250 read=4
+         ->  Index Scan using idx_order_items_seller_ts on order_items oi  (cost=0.42..246.30 rows=222 width=80) (actual time=5.896..7.690 rows=50 loops=1)
+               Index Cond: (seller_id = 'e08596db1d8709660710d430f071d879'::bpchar)
+               Buffers: shared hit=50 read=4
+         ->  Index Scan using orders_pkey on orders o  (cost=0.42..2.55 rows=1 width=50) (actual time=0.032..0.032 rows=1 loops=50)
+               Index Cond: ((order_id = oi.order_id) AND (order_purchase_timestamp = oi.order_purchase_timestamp))
+               Buffers: shared hit=200
+ Planning:
+   Buffers: shared hit=50 read=1
+ Planning Time: 16.780 ms
+ Execution Time: 11.064 ms
+(14 filas)
 
 ---- IDX-2 size ----
  idx_order_items_seller_ts 
 ---------------------------
- 96 MB
-(1 row)
+ 14 MB
+(1 fila)
 
+DROP INDEX
 ######## IDX-3 BEFORE (Q5 catalog browse) ########
-                                                             QUERY PLAN                                                              
--------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.41..320.35 rows=24 width=54) (actual time=1.072..7.954 rows=24 loops=1)
-   Buffers: shared hit=1344 read=15
-   ->  Index Scan using products_pkey on products  (cost=0.41..6572.37 rows=493 width=54) (actual time=1.072..7.952 rows=24 loops=1)
+                                                              QUERY PLAN                                                              
+--------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.28..113.99 rows=24 width=54) (actual time=9.875..178.780 rows=24 loops=1)
+   Buffers: shared hit=1532
+   ->  Index Scan using products_pkey on products  (cost=0.28..559.35 rows=118 width=54) (actual time=9.874..178.764 rows=24 loops=1)
          Filter: (category_id = 66)
-         Rows Removed by Filter: 1321
-         Buffers: shared hit=1344 read=15
+         Rows Removed by Filter: 1496
+         Buffers: shared hit=1532
  Planning:
-   Buffers: shared hit=54
- Planning Time: 0.231 ms
- Execution Time: 7.961 ms
-(10 rows)
+   Buffers: shared hit=7
+ Planning Time: 2.712 ms
+ Execution Time: 179.412 ms
+(10 filas)
 
+CREATE INDEX
+ANALYZE
 ######## IDX-3 AFTER ########
-                                                                   QUERY PLAN                                                                    
--------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.41..81.26 rows=24 width=54) (actual time=0.023..0.044 rows=24 loops=1)
-   Buffers: shared hit=27 read=3
-   ->  Index Scan using idx_products_category_pid on products  (cost=0.41..1705.05 rows=506 width=54) (actual time=0.023..0.042 rows=24 loops=1)
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.28..23.28 rows=24 width=54) (actual time=4.558..4.591 rows=24 loops=1)
+   Buffers: shared hit=24 read=2
+   ->  Index Scan using idx_products_category_pid on products  (cost=0.28..113.37 rows=118 width=54) (actual time=4.556..4.586 rows=24 loops=1)
          Index Cond: (category_id = 66)
-         Buffers: shared hit=27 read=3
+         Buffers: shared hit=24 read=2
  Planning:
-   Buffers: shared hit=28 read=1
- Planning Time: 0.063 ms
- Execution Time: 0.049 ms
-(9 rows)
+   Buffers: shared hit=22 read=1
+ Planning Time: 3.276 ms
+ Execution Time: 4.625 ms
+(9 filas)
 
 ---- IDX-3 size ----
  idx_products_category_pid 
 ---------------------------
- 2144 kB
-(1 row)
+ 544 kB
+(1 fila)
 
+DROP INDEX
 ######## IDX-4 BEFORE (Q7 awaiting approval) ########
-                                                              QUERY PLAN                                                               
----------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=33035.19..33046.86 rows=100 width=41) (actual time=16.314..17.211 rows=100 loops=1)
-   Buffers: shared hit=427 read=26403
-   ->  Gather Merge  (cost=33035.19..33492.09 rows=3916 width=41) (actual time=16.314..17.205 rows=100 loops=1)
-         Workers Planned: 2
-         Workers Launched: 2
-         Buffers: shared hit=427 read=26403
-         ->  Sort  (cost=32035.17..32040.06 rows=1958 width=41) (actual time=15.270..15.273 rows=79 loops=3)
-               Sort Key: order_purchase_timestamp
-               Sort Method: top-N heapsort  Memory: 37kB
-               Buffers: shared hit=427 read=26403
-               Worker 0:  Sort Method: top-N heapsort  Memory: 36kB
-               Worker 1:  Sort Method: top-N heapsort  Memory: 36kB
-               ->  Parallel Seq Scan on orders  (cost=0.00..31960.33 rows=1958 width=41) (actual time=0.216..15.109 rows=1712 loops=3)
-                     Filter: ((order_status)::text = 'created'::text)
-                     Rows Removed by Filter: 331621
-                     Buffers: shared hit=349 read=26403
+                                                      QUERY PLAN                                                      
+----------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=5935.66..5935.91 rows=100 width=41) (actual time=380.577..380.603 rows=100 loops=1)
+   Buffers: shared hit=4032
+   ->  Sort  (cost=5935.66..5937.54 rows=750 width=41) (actual time=380.576..380.591 rows=100 loops=1)
+         Sort Key: order_purchase_timestamp
+         Sort Method: top-N heapsort  Memory: 36kB
+         Buffers: shared hit=4032
+         ->  Seq Scan on orders  (cost=0.00..5907.00 rows=750 width=41) (actual time=0.195..379.306 rows=710 loops=1)
+               Filter: ((order_status)::text = 'created'::text)
+               Rows Removed by Filter: 149290
+               Buffers: shared hit=4032
  Planning:
-   Buffers: shared hit=17
- Planning Time: 0.034 ms
- Execution Time: 17.218 ms
-(20 rows)
+   Buffers: shared hit=7
+ Planning Time: 3.582 ms
+ Execution Time: 380.656 ms
+(14 filas)
 
+CREATE INDEX
+ANALYZE
 ######## IDX-4 AFTER ########
-                                                                    QUERY PLAN                                                                     
----------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.28..368.37 rows=100 width=41) (actual time=0.021..0.482 rows=100 loops=1)
-   Buffers: shared hit=4 read=98
-   ->  Index Scan using idx_orders_created_pending on orders  (cost=0.28..18772.78 rows=5100 width=41) (actual time=0.021..0.478 rows=100 loops=1)
-         Buffers: shared hit=4 read=98
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.28..103.95 rows=100 width=41) (actual time=1.363..1.491 rows=100 loops=1)
+   Buffers: shared hit=100 read=2
+   ->  Index Scan using idx_orders_created_pending on orders  (cost=0.28..700.10 rows=675 width=41) (actual time=1.362..1.479 rows=100 loops=1)
+         Buffers: shared hit=100 read=2
  Planning:
    Buffers: shared hit=21 read=1
- Planning Time: 0.082 ms
- Execution Time: 0.490 ms
-(8 rows)
+ Planning Time: 1.152 ms
+ Execution Time: 1.523 ms
+(8 filas)
 
 ---- IDX-4 size (compare con un B-tree total sobre order_status) ----
  idx_parcial 
 -------------
- 136 kB
-(1 row)
+ 32 kB
+(1 fila)
 
+DROP INDEX
 ######## IDX-5 BEFORE (Q8 outbox poll) ########
-                                                          QUERY PLAN                                                          
-------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=1559.63..1559.88 rows=100 width=67) (actual time=16.880..16.886 rows=100 loops=1)
-   Buffers: shared read=1020
-   ->  Sort  (cost=1559.63..1562.23 rows=1037 width=67) (actual time=16.879..16.882 rows=100 loops=1)
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=312.64..312.89 rows=100 width=67) (actual time=160.861..160.886 rows=100 loops=1)
+   Buffers: shared hit=80 read=125
+   ->  Sort  (cost=312.64..313.14 rows=200 width=67) (actual time=160.859..160.874 rows=100 loops=1)
          Sort Key: created_at
-         Sort Method: top-N heapsort  Memory: 47kB
-         Buffers: shared read=1020
-         ->  Seq Scan on outbox_events  (cost=0.00..1520.00 rows=1037 width=67) (actual time=0.015..16.773 rows=1035 loops=1)
+         Sort Method: quicksort  Memory: 51kB
+         Buffers: shared hit=80 read=125
+         ->  Seq Scan on outbox_events  (cost=0.00..305.00 rows=200 width=67) (actual time=1.503..160.661 rows=200 loops=1)
                Filter: (processed_at IS NULL)
-               Rows Removed by Filter: 48965
-               Buffers: shared read=1020
+               Rows Removed by Filter: 9800
+               Buffers: shared hit=80 read=125
  Planning:
-   Buffers: shared hit=42 read=2
- Planning Time: 0.080 ms
- Execution Time: 16.895 ms
-(14 rows)
+   Buffers: shared hit=6
+ Planning Time: 1.818 ms
+ Execution Time: 161.490 ms
+(14 filas)
 
+CREATE INDEX
+ANALYZE
 ######## IDX-5 AFTER ########
-                                                                     QUERY PLAN                                                                      
------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.28..272.02 rows=100 width=67) (actual time=0.019..0.090 rows=100 loops=1)
-   Buffers: shared hit=100 read=2
-   ->  Index Scan using idx_outbox_unprocessed on outbox_events  (cost=0.28..2731.31 rows=1005 width=67) (actual time=0.018..0.086 rows=100 loops=1)
-         Buffers: shared hit=100 read=2
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.14..76.99 rows=100 width=67) (actual time=0.587..0.702 rows=100 loops=1)
+   Buffers: shared hit=100 read=1
+   ->  Index Scan using idx_outbox_unprocessed on outbox_events  (cost=0.14..153.84 rows=200 width=67) (actual time=0.586..0.691 rows=100 loops=1)
+         Buffers: shared hit=100 read=1
  Planning:
-   Buffers: shared hit=24 read=1
- Planning Time: 0.060 ms
- Execution Time: 0.096 ms
-(8 rows)
+   Buffers: shared hit=22 read=1
+ Planning Time: 1.493 ms
+ Execution Time: 0.735 ms
+(8 filas)
 
 ---- IDX-5 size ----
  idx_outbox_unprocessed 
 ------------------------
- 40 kB
-(1 row)
+ 16 kB
+(1 fila)
 
+DROP INDEX
 ######## IDX-6 BEFORE (JSONB containment, selective) ########
-                                                QUERY PLAN                                                
-----------------------------------------------------------------------------------------------------------
- Seq Scan on products  (cost=0.00..1612.00 rows=651 width=33) (actual time=0.008..3.696 rows=637 loops=1)
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Seq Scan on products  (cost=0.00..403.00 rows=158 width=33) (actual time=0.041..3.696 rows=158 loops=1)
    Filter: (product_specifications @> '{"logistics": {"fragile": true}, "warranty_months": 24}'::jsonb)
-   Rows Removed by Filter: 31363
-   Buffers: shared hit=1212
+   Rows Removed by Filter: 7842
+   Buffers: shared hit=303
  Planning:
-   Buffers: shared hit=9
- Planning Time: 0.021 ms
- Execution Time: 3.710 ms
-(8 rows)
+   Buffers: shared hit=12
+ Planning Time: 0.140 ms
+ Execution Time: 3.736 ms
+(8 filas)
 
+CREATE INDEX
+ANALYZE
 ######## IDX-6 AFTER ########
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
- Bitmap Heap Scan on products  (cost=28.61..1074.17 rows=631 width=33) (actual time=0.163..0.537 rows=637 loops=1)
+                                                            QUERY PLAN                                                             
+-----------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on products  (cost=5.05..137.50 rows=158 width=33) (actual time=0.150..0.392 rows=158 loops=1)
    Recheck Cond: (product_specifications @> '{"logistics": {"fragile": true}, "warranty_months": 24}'::jsonb)
-   Heap Blocks: exact=498
-   Buffers: shared hit=504
-   ->  Bitmap Index Scan on idx_products_specs_gin  (cost=0.00..28.45 rows=631 width=0) (actual time=0.135..0.136 rows=637 loops=1)
+   Heap Blocks: exact=124
+   Buffers: shared hit=129
+   ->  Bitmap Index Scan on idx_products_specs_gin  (cost=0.00..5.01 rows=158 width=0) (actual time=0.126..0.126 rows=158 loops=1)
          Index Cond: (product_specifications @> '{"logistics": {"fragile": true}, "warranty_months": 24}'::jsonb)
-         Buffers: shared hit=6
+         Buffers: shared hit=5
  Planning:
-   Buffers: shared hit=23
- Planning Time: 0.068 ms
- Execution Time: 0.558 ms
-(11 rows)
+   Buffers: shared hit=19
+ Planning Time: 0.210 ms
+ Execution Time: 0.431 ms
+(11 filas)
 
 ---- IDX-6 size ----
  idx_products_specs_gin 
 ------------------------
- 176 kB
-(1 row)
+ 56 kB
+(1 fila)
 
-######## IDX-7 BEFORE (range scan, sin índice) ########
-                                                                                             QUERY PLAN                                                                                             
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Finalize Aggregate  (cost=18618.66..18618.67 rows=1 width=8) (actual time=16.627..17.997 rows=1 loops=1)
-   Buffers: shared hit=2080 read=9248
-   ->  Gather  (cost=18618.44..18618.65 rows=2 width=8) (actual time=16.575..17.994 rows=3 loops=1)
-         Workers Planned: 2
-         Workers Launched: 2
-         Buffers: shared hit=2080 read=9248
-         ->  Partial Aggregate  (cost=17618.44..17618.45 rows=1 width=8) (actual time=10.995..10.995 rows=1 loops=3)
-               Buffers: shared hit=2080 read=9248
-               ->  Parallel Seq Scan on orders_ts_demo  (cost=0.00..17578.00 rows=16178 width=0) (actual time=3.685..10.686 rows=12961 loops=3)
-                     Filter: ((order_purchase_timestamp >= '2017-06-01 00:00:00+00'::timestamp with time zone) AND (order_purchase_timestamp < '2017-07-01 00:00:00+00'::timestamp with time zone))
-                     Rows Removed by Filter: 320373
-                     Buffers: shared hit=2080 read=9248
+DROP TABLE
+SELECT 150000
+ANALYZE
+######## IDX-7 BEFORE (range scan, sin Ã­ndice) ########
+                                                                                       QUERY PLAN                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3992.46..3992.47 rows=1 width=8) (actual time=17.635..17.635 rows=1 loops=1)
+   Buffers: shared hit=1728
+   ->  Seq Scan on orders_ts_demo  (cost=0.00..3978.00 rows=5784 width=0) (actual time=7.688..17.222 rows=5894 loops=1)
+         Filter: ((order_purchase_timestamp >= '2017-06-01 00:00:00+00'::timestamp with time zone) AND (order_purchase_timestamp < '2017-07-01 00:00:00+00'::timestamp with time zone))
+         Rows Removed by Filter: 144106
+         Buffers: shared hit=1728
  Planning:
-   Buffers: shared hit=10 read=1
- Planning Time: 0.093 ms
- Execution Time: 18.017 ms
-(16 rows)
+   Buffers: shared hit=5
+ Planning Time: 1.990 ms
+ Execution Time: 17.689 ms
+(10 filas)
 
+CREATE INDEX
+ANALYZE
 ######## IDX-7 AFTER (B-tree) ########
                                                                                          QUERY PLAN                                                                                         
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Aggregate  (cost=1610.66..1610.67 rows=1 width=8) (actual time=9.291..9.292 rows=1 loops=1)
-   Buffers: shared read=551
-   ->  Index Only Scan using idx_demo_btree on orders_ts_demo  (cost=0.42..1521.19 rows=35788 width=0) (actual time=0.032..8.333 rows=38882 loops=1)
+ Aggregate  (cost=211.20..211.21 rows=1 width=8) (actual time=17.914..17.915 rows=1 loops=1)
+   Buffers: shared hit=68 read=19
+   ->  Index Only Scan using idx_demo_btree on orders_ts_demo  (cost=0.42..197.08 rows=5648 width=0) (actual time=2.375..17.483 rows=5894 loops=1)
          Index Cond: ((order_purchase_timestamp >= '2017-06-01 00:00:00+00'::timestamp with time zone) AND (order_purchase_timestamp < '2017-07-01 00:00:00+00'::timestamp with time zone))
-         Heap Fetches: 38882
-         Buffers: shared read=551
+         Heap Fetches: 5894
+         Buffers: shared hit=68 read=19
  Planning:
    Buffers: shared hit=5 read=1
- Planning Time: 0.055 ms
- Execution Time: 9.311 ms
-(10 rows)
+ Planning Time: 1.435 ms
+ Execution Time: 17.973 ms
+(10 filas)
 
+DROP INDEX
+CREATE INDEX
+ANALYZE
 ######## IDX-7 AFTER (BRIN) ########
                                                                                             QUERY PLAN                                                                                            
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Aggregate  (cost=12090.18..12090.19 rows=1 width=8) (actual time=3.236..3.237 rows=1 loops=1)
-   Buffers: shared hit=447 read=39
-   ->  Bitmap Heap Scan on orders_ts_demo  (cost=26.16..11989.76 rows=40170 width=0) (actual time=0.176..2.304 rows=38882 loops=1)
+ Aggregate  (cost=1872.36..1872.37 rows=1 width=8) (actual time=1.842..1.843 rows=1 loops=1)
+   Buffers: shared hit=98
+   ->  Bitmap Heap Scan on orders_ts_demo  (cost=4.78..1857.78 rows=5833 width=0) (actual time=0.313..1.422 rows=5894 loops=1)
          Recheck Cond: ((order_purchase_timestamp >= '2017-06-01 00:00:00+00'::timestamp with time zone) AND (order_purchase_timestamp < '2017-07-01 00:00:00+00'::timestamp with time zone))
-         Rows Removed by Index Recheck: 3567
-         Heap Blocks: lossy=480
-         Buffers: shared hit=447 read=39
-         ->  Bitmap Index Scan on idx_demo_brin  (cost=0.00..16.12 rows=42373 width=0) (actual time=0.038..0.039 rows=4800 loops=1)
+         Rows Removed by Index Recheck: 2593
+         Heap Blocks: lossy=96
+         Buffers: shared hit=98
+         ->  Bitmap Index Scan on idx_demo_brin  (cost=0.00..3.32 rows=8333 width=0) (actual time=0.025..0.025 rows=960 loops=1)
                Index Cond: ((order_purchase_timestamp >= '2017-06-01 00:00:00+00'::timestamp with time zone) AND (order_purchase_timestamp < '2017-07-01 00:00:00+00'::timestamp with time zone))
-               Buffers: shared hit=6
+               Buffers: shared hit=2
  Planning:
-   Buffers: shared hit=15
- Planning Time: 0.141 ms
- Execution Time: 3.257 ms
-(14 rows)
+   Buffers: shared hit=12
+ Planning Time: 0.822 ms
+ Execution Time: 1.884 ms
+(14 filas)
 
----- IDX-7 tamaños: B-tree vs BRIN ----
-  tipo  | size  
---------+-------
- B-tree | 21 MB
- BRIN   | 32 kB
-(2 rows)
+---- IDX-7 tamaÃ±os: B-tree vs BRIN ----
+CREATE INDEX
+  tipo  |  size   
+--------+---------
+ B-tree | 3312 kB
+ BRIN   | 24 kB
+(2 filas)
 

@@ -1,66 +1,83 @@
-# Actividad 4 — Optimización PostgreSQL para Ecommify
+# Módulo de Optimización PostgreSQL para Ecommify (Supabase)
 
-Optimización de consultas, índices especializados y particionamiento declarativo sobre la arquitectura híbrida del proyecto, con métricas reales `EXPLAIN (ANALYZE, BUFFERS)` medidas en PostgreSQL 16 + PostGIS.
+Este módulo contiene los scripts de prueba de rendimiento, reescritura de consultas, indexación especializada y particionamiento declarativo ejecutados directamente sobre **Supabase (PostgreSQL 17.6 + PostGIS)**.
+
+Todas las dependencias de contenedores locales (Docker) han sido removidas, orientando toda la arquitectura y validación a la nube.
 
 ---
 
-## 🛠️ Resumen de Optimizaciones Logradas
+## 🛠️ Resumen de Optimizaciones Logradas en Supabase
 
-| Tipo de Optimización | Consulta Bajo Análisis | Latencia Inicial (Baseline) | Latencia Optimizada | Factor de Mejora |
-|---|---|---|---|---|
-| **Optimización de Consulta** | Q3 (Búsqueda de Vendedores con Geolocalización) | `611.23 ms` | `37.26 ms` | **16.4x** |
-| **Índice Compuesto** | Q4 (Órdenes Entregadas con Retraso) | `84.81 ms` | `2.13 ms` | **39.8x** |
-| **Índice Parcial** | Q8 (Procesamiento de Outbox Cola Activa) | `10.22 ms` | `0.04 ms` | **255.5x** |
-| **Índice GIN (JSONB)** | Q6 (Búsqueda de Especificaciones de Productos) | `372.10 ms` | `0.11 ms` | **3382.7x** |
-| **Particionamiento Rango** | Q9 (Volumen mensual histórico por canal de pago) | `265.81 ms` | `10.21 ms` (Partition Pruning) | **26.0x** |
+| Tipo de Optimización | Consulta / Técnica | Latencia Inicial (Baseline) | Latencia Optimizada | Factor de Mejora | Impacto Técnico |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **Optimización de Consulta** | OPT-3 (Anti-join `NOT EXISTS` vs `NOT IN`) | `3195.64 ms` | `35.42 ms` | **90.2x** | Evita derrame en disco por hash temporal |
+| **Paginación Keyset** | OPT-4 (Cursor de ID vs `OFFSET` profundo) | `290.07 ms` | `0.09 ms` | **3223.0x** | Complejidad de acceso constante $O(1)$ |
+| **Índice Compuesto** | IDX-2 (Seller Items recientes por timestamp) | `1206.58 ms` | `11.06 ms` | **109.1x** | Satisface filtro y orden, evitando el `Sort` |
+| **Índice Parcial** | IDX-4 (Pedidos creados pendientes de aprobar) | `380.66 ms` | `1.52 ms` | **250.4x** | Índice ultraligero (~16 KB) para cola activa |
+| **Índice BRIN** | IDX-7 (Rango temporal en serie de tiempo) | `17.97 ms` (B-tree) | `1.88 ms` (BRIN) | **9.5x** | Espacio reducido **655 veces** vs B-tree |
+| **Particionamiento Rango**| Poda Mensual (`orders` vs `orders_part`) | `748.82 ms` | `2.38 ms` | **314.6x** | Poda 25 de 26 particiones en planificación |
 
 > [!TIP]
-> Para ver el análisis profundo de cada plan de ejecución con las métricas detalladas de lectura en disco y búferes, consulta el informe en [REPORTE.md](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/REPORTE.md) o descarga el reporte formal [Actividad 4 - Informe Optimizacion.pdf](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/Actividad%204%20-%20Informe%20Optimizacion.pdf).
+> Para ver el análisis profundo de los planes de ejecución, tamaños físicos de índices, y trade-offs detallados, consulta el informe completo en **[REPORTE.md](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/REPORTE.md)**.
 
 ---
 
-## 📊 Por qué datos sintéticos
+## 📊 Carga Masiva y Escala de Datos en Supabase
 
-Las semillas reales (`postgresql/seed_data/`) tienen ~200 filas: insuficiente para que el planificador elija índices o para justificar particionamiento (criterio >100.000 filas). `generate_data.py` infla los hechos a **1.000.000 de órdenes** (~1,49 M ítems, ~1,12 M pagos, ~610 K reseñas) muestreando de los CSV reales para conservar distribuciones estadísticas realistas.
+Para cumplir con el límite de almacenamiento de **500 MB** de la capa gratuita de Supabase, escalamos la generación de datos a **150.000 órdenes transaccionales** (generando ~120 MB de datos en CSV y ocupando **~200 MB** de espacio indexado dentro de la base de datos). Esto es estadísticamente representativo de un entorno productivo sin saturar la cuota gratuita.
+
+El volumen cargado se distribuye de la siguiente manera:
+* `order_items`: 223,405 filas (60 MB)
+* `order_payments`: 168,065 filas (33 MB)
+* `customers`: 150,000 filas (30 MB)
+* `orders`: 150,000 filas (44 MB)
+* `order_reviews`: 91,677 filas (25 MB)
+* `outbox_events`: 10,000 filas (2048 KB)
 
 ---
 
-## ⚙️ Reproducir de cero (Escala 1M órdenes)
+## ⚙️ Cómo Reproducir el Proceso de Optimización
 
-1. **Navegar a la carpeta del módulo de optimización**:
-   ```bash
-   cd postgresql/optimizaciones
-   ```
+### 1. Configurar la Conexión de Supabase
+Crea un archivo llamado `.env` en la raíz del repositorio (`Ecommify-Database-Design/.env`) que contenga tu URI de conexión de Supabase. Dado que las contraseñas de base de datos pueden contener caracteres especiales como `@` o `:`, la contraseña del URI debe estar **URL-encoded** (ejemplo: `@` se reemplaza por `%40`).
 
-2. **Levantar PostgreSQL 16 + PostGIS (parámetros por defecto a propósito)**:
-   ```bash
-   docker compose up -d
-   ```
+```text
+SUPABASE_DB_URL=postgresql://postgres.[PROYECTO]:[PASSWORD_URL_ENCODED]@aws-1-us-east-1.pooler.supabase.com:6543/postgres
+```
 
-3. **Generar los CSV sintéticos (~780 MB en data/, reproducible con --seed)**:
-   ```bash
-   python3 generate_data.py --orders 1000000
-   ```
+### 2. Generar el Dataset Sintético
+Navega a esta carpeta y ejecuta el generador de datos apuntando al directorio de semillas del repositorio:
+```bash
+cd postgresql/optimizaciones
+python generate_data.py --orders 150000 --products 8000 --sellers 1000 --promos 1000 --outbox 10000 --seed-dir ../seed_data
+```
+Esto creará los archivos CSV en la subcarpeta `data/`.
 
-4. **Esquema base (tabla orders PLANA, sin índices de optimización)**:
-   ```bash
-   export PGPASSWORD=ecommify
-   DB="postgresql://ecommify:ecommify@localhost:5433/ecommify"
-   psql "$DB" -v ON_ERROR_STOP=1 -f sql/00_schema_baseline.sql
-   ```
+### 3. Ejecutar la Limpieza y Despliegue del Esquema Base
+Utiliza el script de utilidad Python para limpiar la base de datos Supabase e instalar el esquema inicial plano (sin índices adicionales ni particiones):
+```bash
+python run_sql_on_supabase.py sql/00_cleanup.sql
+python run_sql_on_supabase.py sql/00_schema_baseline.sql
+```
 
-5. **Carga masiva + VACUUM ANALYZE + reporte de volúmenes**:
-   ```bash
-   psql "$DB" -v ON_ERROR_STOP=1 -f sql/00_load.sql
-   ```
-   > Se usa la imagen multi‑arquitectura `imresamu/postgis:16-3.4` (mismo Dockerfile que `postgis/postgis`), que corre **nativa en arm64 y amd64** sin emulación. La carga completa toma aproximadamente 30 segundos.
+### 4. Cargar los Datos vía Streaming de Red
+Ejecuta la carga masiva. Este comando utiliza `psql` con sentencias `\copy` para realizar la inserción a través de la red (no requiere que el servidor Supabase tenga acceso local a los archivos CSV):
+```bash
+python run_sql_on_supabase.py sql/00_load.sql
+```
+*(Tarda aproximadamente de 30 a 60 segundos según tu velocidad de conexión).*
 
-6. **Aplicar optimizaciones**:
-   Ejecuta los scripts SQL contenidos en la carpeta `sql/` para medir el impacto de las optimizaciones:
-   - [01_critical_queries.sql](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/sql/01_critical_queries.sql): Ejecuta el baseline de consultas críticas.
-   - [02_query_optimizations.sql](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/sql/02_query_optimizations.sql): Reescribe consultas OLTP críticas para mejorar performance.
-   - [03_specialized_indexes.sql](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/sql/03_specialized_indexes.sql): Añade índices compuestos, parciales y GIN.
-   - [04_partitioning.sql](file:///D:/Workspaces/source/repos/Ecommify-Database-Design/postgresql/optimizaciones/sql/04_partitioning.sql): Implementa particionamiento por mes para las órdenes.
+### 5. Ejecutar la Suite de Benchmarks y Capturar Resultados
+Ejecuta el script master que corre secuencialmente todas las pruebas de optimización, indexación y particionamiento, capturando los resultados `EXPLAIN ANALYZE` directamente en archivos de texto dentro de `results/`:
+```bash
+python ../../scratch/run_all_benchmarks.py
+```
+
+### 6. Regenerar los Gráficos de Rendimiento (Opcional)
+Para redibujar las gráficas de rendimiento SVG basadas en tus propias latencias de red y hardware de Supabase:
+```bash
+python ../../scratch/generate_charts.py
+```
 
 ---
 
@@ -68,37 +85,25 @@ Las semillas reales (`postgresql/seed_data/`) tienen ~200 filas: insuficiente pa
 
 ```text
 postgresql/optimizaciones/
-├── docker-compose.yml          # PostgreSQL 16 + PostGIS, puerto host 5433
-├── generate_data.py            # Generador de datos sintéticos a escala
-├── README.md                   # Esta guía del módulo
-├── REPORTE.md                  # Informe consolidado con planes EXPLAIN ANALYZE
-├── Actividad 4 - Informe Optimizacion.pdf # Reporte formal en formato PDF
-├── sql/                        # Directorio con scripts SQL de prueba
+├── generate_data.py            # Generador de datos sintéticos
+├── run_sql_on_supabase.py      # Utilidad Python para ejecutar SQL en Supabase
+├── README.md                   # Esta guía de uso
+├── REPORTE.md                  # Reporte detallado de optimizaciones y SVG gráficos
+├── Actividad 4 - Informe Optimizacion.pdf # Reporte formal histórico
+├── sql/                        # Carpeta de DDL y scripts SQL
+│   ├── 00_cleanup.sql          # Elimina tablas/tipos previos para inicio limpio
 │   ├── 00_schema_baseline.sql  # Esquema base (plano, sin índices extra)
 │   ├── 00_load.sql             # Carga masiva \copy + post-proceso
-│   ├── 01_critical_queries.sql # Fase 1 — consultas OLTP críticas
-│   ├── 02_query_optimizations.sql # Fase 2 — consultas optimizadas
-│   ├── 03_specialized_indexes.sql # Fase 3 — índices especializados
-│   └── 04_partitioning.sql     # Fase 4 — particionamiento declarativo
-└── results/                    # Salidas EXPLAIN capturadas
-    ├── 00_load.txt
+│   ├── 01_critical_queries.sql # Fase 1 — consultas OLTP críticas base
+│   ├── 02_query_optimizations.sql # Fase 2 — consultas optimizadas (reescrituras)
+│   ├── 03_specialized_indexes.sql # Fase 3 — índices especializados (creación y EXPLAIN)
+│   └── 04_partitioning.sql     # Fase 4 — particionamiento mensual y validación de poda
+└── results/                    # Salidas EXPLAIN y gráficos de rendimiento
     ├── 01_baseline_plans.txt
     ├── 02_optimizations.txt
     ├── 03_indexes.txt
-    ├── 03b_gin_orders.txt
-    └── 04_partitioning.txt
+    ├── 04_partitioning.txt
+    ├── query_optimizations_chart.svg
+    ├── indexes_chart.svg
+    └── partitioning_chart.svg
 ```
-
----
-
-## 📊 Estado del Dataset Cargado
-
-| Tabla | Filas | Notas para las fases |
-|---|---:|---|
-| `orders` | 1.000.000 | Rango 2016‑09 … 2018‑10 + 1.000 filas en 2019 (→ partición `DEFAULT`) |
-| `order_items` | 1.489.352 | Claves foráneas a products (32 K) y sellers (3 K) |
-| `order_payments` | 1.120.365 | Mezcla realista de medios de pago |
-| `order_reviews` | 610.215 | Puntajes sesgados a 4‑5 |
-| `customers` | 1.000.000 | 496 K personas; 297 K con >1 orden |
-| `outbox_events` | 50.000 | 1.035 sin procesar (~2 %) → probado con índice parcial |
-| `product_promotions` | 6.000 | 2.000 activas en `now()` |

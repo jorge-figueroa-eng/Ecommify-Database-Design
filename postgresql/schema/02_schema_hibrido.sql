@@ -110,6 +110,8 @@ FOR VALUES FROM ('2017-01-01') TO ('2018-01-01');
 CREATE TABLE orders_2018 PARTITION OF orders
 FOR VALUES FROM ('2018-01-01') TO ('2019-01-01');
 
+CREATE TABLE orders_default PARTITION OF orders DEFAULT;
+
 CREATE TABLE order_items (
     order_id CHAR(32) NOT NULL,
     order_purchase_timestamp TIMESTAMPTZ NOT NULL,
