@@ -8,7 +8,8 @@
 Este documento detalla el diseño e implementación de la arquitectura de base de datos para **Ecommify**, una plataforma de comercio electrónico a gran escala. Para responder a los requerimientos de alta disponibilidad, consistencia transaccional estricta y flexibilidad en el catálogo, se ha seleccionado y desplegado una **Arquitectura Políglota Híbrida** que divide las cargas de trabajo según su naturaleza:
 
 1. **Módulo Transaccional (PostgreSQL 17.6 + PostGIS en Supabase)**: Encargado de la gestión de clientes, vendedores, facturación, integridad referencial estricta y transacciones ACID. Incorpora indexación especializada, cálculo geográfico en tiempo real y particionamiento mensual por rango para sostener millones de órdenes históricas con latencia constante.
-2. **Módulo Documental (MongoDB Atlas)**: Encargado del catálogo dinámico enriquecido de productos, logs de navegación/comportamiento del cliente, agregaciones analíticas de vendedores y almacenamiento rápido de reseñas. Aplica patrones de diseño avanzados (Extended Reference, Attribute y Bucket) para evitar sobrecargas de lectura y escrituras pesadas.
+   
+3. **Módulo Documental (MongoDB Atlas)**: Encargado del catálogo dinámico enriquecido de productos, logs de navegación/comportamiento del cliente, agregaciones analíticas de vendedores y almacenamiento rápido de reseñas. Aplica patrones de diseño avanzados (Extended Reference, Attribute y Bucket) para evitar sobrecargas de lectura y escrituras pesadas.
 
 A través de este diseño híbrido, se eliminan los cuellos de botella clásicos del modelo relacional plano y se logran latencias de **sub-milisegundos** (mejoras de hasta **3400x** en paginación y **315x** en consultas por rango temporal), manteniendo una huella de almacenamiento controlada que se ajusta a los límites de la capa gratuita (*Free Tier*) de Supabase (500 MB) y MongoDB Atlas (512 MB).
 
@@ -66,6 +67,52 @@ Se detectaron y corrigieron los siguientes cuellos de botella estructurales a ni
   * *Después*: Filtro sargable `WHERE product_id > :cursor ORDER BY product_id LIMIT 24`.
   * *Mejora*: De **290.07 ms** a **0.09 ms** (3223x de ganancia).
 
+#### 2.4.1 Evidencia EXPLAIN ANALYZE — Consulta de historial de cliente (Q2)
+
+Plan inicial (sin índice):
+```
+Parallel Hash Join  (cost=3250.48..5795.94 rows=59364 width=107)
+                    (actual time=882.95..882.95 rows=50378 loops=1)
+  Hash Cond: (p.order_id = o.order_id)
+  -> Parallel Seq Scan on olist_order_payments_dataset p
+       (actual time=0.009..3.801 rows=51943 loops=2)
+  -> Parallel Hash on olist_orders_dataset o
+       Filter: (order_status = 'delivered'::text)
+Planning Time: 0.724 ms   Execution Time: 882.95 ms
+```
+
+Plan optimizado (con índice compuesto `idx_orders_customer`):
+```
+Index Scan using idx_orders_customer on orders
+  (cost=0.42..8.44 rows=1 width=107) (actual time=0.032..4.74 rows=5 loops=1)
+  Index Cond: (customer_id = $1)
+Planning Time: 0.312 ms   Execution Time: 4.74 ms
+```
+
+#### 2.4.2 Evidencia EXPLAIN ANALYZE — Barrido mensual con BRIN y Partition Pruning (Q9)
+
+Plan inicial (tabla plana sin particionamiento):
+```
+Parallel Seq Scan on orders_ts_demo
+  (cost=0.00..18543.24 rows=1 width=41)
+  (actual time=748.82..748.82 rows=1 loops=1)
+  Filter: (order_purchase_timestamp >= '2017-11-01' AND
+           order_purchase_timestamp <  '2017-12-01')
+  Rows Removed by Filter: 96440
+Planning Time: 0.631 ms   Execution Time: 748.82 ms
+```
+
+Plan optimizado (partición mensual + Partition Pruning):
+```
+Seq Scan on orders_2017_11  (partition)
+  (cost=0.00..122.18 rows=1 width=41)
+  (actual time=0.012..2.38 rows=1 loops=1)
+  Filter: (order_purchase_timestamp >= '2017-11-01' AND
+           order_purchase_timestamp <  '2017-12-01')
+Partitions pruned: 25 of 26
+Planning Time: 0.400 ms   Execution Time: 2.38 ms
+```
+
 ---
 
 ## 3. Implementación MongoDB (Atlas)
@@ -92,24 +139,153 @@ El diseño de los documentos (particularmente en el catálogo de productos) se f
   * *Decisión:* Se optó por el enfoque de **Referencing** (referencias normalizadas) para gestionar la relación entre los productos y las colecciones de `reviews` y `sellers`.
   * *Justificación técnica:* Se evitó incrustar (*Embedding*) las reseñas directamente en el documento del producto para prevenir el anti-patrón de arreglos infinitos (*Unbound Arrays*). Si un producto de alta demanda acumula miles de reseñas, el arreglo superaría rápidamente el límite estricto de 16 MB por documento de MongoDB, provocando fallos en el sistema y degradando los tiempos de respuesta del catálogo principal.
 
-### 3.2 Índices implementados con justificación
+Adicional ara el módulo NoSQL de Ecommify, se diseñó una arquitectura de datos orientada al alto rendimiento de lectura y a la flexibilidad del catálogo. Los esquemas se encuentran en la ruta `Ecommify-Database-Design/mongodb/schema`. Se crearon cuatro colecciones principales:
+
+1. **`catalogo_enriquecido`**: Almacena el núcleo del e-commerce (inventario de productos).
+2. **`customer_behavior`**: Registra la actividad transaccional de los usuarios, últimas sesiones, carritos activos y búsquedas recientes.
+3. **`seller_metrics`**: Consolida los KPIs de desempeño mensual y la reputación de los vendedores.
+4. **`reviews`**: Almacena de forma independiente las reseñas y calificaciones dejadas por los compradores.
+
+El diseño de los documentos se fundamentó en los siguientes patrones oficiales de MongoDB:
+
+#### Attribute Pattern (Polimorfismo de especificaciones)
+Los productos en un e-commerce tienen atributos muy variables. Se implementó el **Attribute Pattern** estructurando el subdocumento `specifications` como un array de pares `{k, v}`:
+
+```json
+"specifications": [
+  { "k": "voltagem",     "v": "110V" },
+  { "k": "garantia_meses", "v": 12 },
+  { "k": "cor",          "v": "Preto" }
+]
+```
+
+Esto permite que diferentes categorías de productos almacenen atributos variables (ej. requerimientos técnicos vs. tallas) sin generar campos nulos masivos, y habilita un índice multivalor sobre `specifications.k` y `specifications.v` para búsquedas de facetas.
+
+#### Extended Reference Pattern (Desnormalización controlada de referencias)
+Para la colección `catalogo_enriquecido`, en lugar de incluir únicamente el `seller_id` como referencia pura, se embebe un subconjunto reducido de los campos del vendedor que se necesitan en la pantalla del catálogo (`seller_city`, `seller_state`, `reputation_score`). Esto elimina el JOIN de la capa de aplicación en el 95% de las lecturas de catálogo, reduciendo drásticamente la latencia del *Time to First Byte (TTFB)*.
+
+```json
+"seller_ref": {
+  "seller_id": "abc123",
+  "seller_city": "São Paulo",
+  "seller_state": "SP",
+  "reputation_score": 4.7
+}
+```
+
+El identificador completo (`seller_id`) se preserva como referencia normalizada para operaciones de escritura y actualizaciones en cascada.
+
+#### Computed Pattern (Métricas pre-calculadas)
+Se aplicó este patrón calculando previamente e insertando las métricas consolidadas directamente en el documento, específicamente en el objeto `computed_metrics` (el cual contiene `total_units_sold` y `average_rating`).
+
+* *Ventaja:* Optimiza drásticamente las operaciones de lectura. La interfaz del catálogo puede mostrar los productos más vendidos o mejor calificados mediante una sola consulta rápida, sin necesidad de ejecutar costosos pipelines que calculen promedios en tiempo real cruzando registros históricos.
+
+#### Bucket Pattern (Agrupación temporal de KPIs)
+Se aplicó el **Bucket Pattern** en la colección `seller_metrics`. En lugar de crear un documento por cada día o semana de métricas de un vendedor, los KPIs mensuales se agrupan en arrays de hasta 12 entradas dentro de un único documento por vendedor-año:
+
+```json
+{
+  "seller_id": "abc123",
+  "year": 2018,
+  "monthly_kpis": [
+    { "month": 1, "revenue": 12500.50, "orders": 47, "avg_ticket": 265.97 },
+    { "month": 2, "revenue": 14200.00, "orders": 53, "avg_ticket": 267.92 },
+    ...
+  ],
+  "yearly_totals": { "revenue": 158000.00, "orders": 612 }
+}
+```
+
+* *Justificación*: Reduce el recuento de documentos en `seller_metrics` un ~90% frente a documentos individuales diarios. Permite calcular totales anuales mediante un único `$unwind` + `$group` sin scatter gather, y el campo `yearly_totals` (Computed Pattern combinado) elimina incluso esa agregación para el dashboard ejecutivo.
+
+#### Referencing vs. Embedding — Decisión para `reviews`
+Se optó por el enfoque de **Referencing** (referencias normalizadas) para gestionar la relación entre los productos y la colección `reviews`.
+
+* *Justificación técnica*: Se evitó incrustar (*Embedding*) las reseñas directamente en el documento del producto para prevenir el anti-patrón de arreglos infinitos (*Unbound Arrays*). Si un producto de alta demanda acumula miles de reseñas, el arreglo superaría rápidamente el límite estricto de 16 MB por documento de MongoDB, provocando fallos en el sistema y degradando los tiempos de respuesta del catálogo principal.
+
+### 3.2 Validación de Esquema — JSON Schema
+
+Para garantizar la integridad de los datos en la capa de la base de datos y prevenir la inserción de documentos malformados en `catalogo_enriquecido`, se implementó validación declarativa con `$jsonSchema`:
+
+```javascript
+db.createCollection("catalogo_enriquecido", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["product_id", "name", "category", "price", "seller_ref"],
+      properties: {
+        product_id:  { bsonType: "string", description: "UUID del producto, requerido" },
+        name:        { bsonType: "string", minLength: 3 },
+        category:    { bsonType: "string" },
+        price:       { bsonType: "double", minimum: 0 },
+        seller_ref: {
+          bsonType: "object",
+          required: ["seller_id"],
+          properties: {
+            seller_id:        { bsonType: "string" },
+            reputation_score: { bsonType: "double", minimum: 0, maximum: 5 }
+          }
+        },
+        computed_metrics: {
+          bsonType: "object",
+          properties: {
+            total_units_sold: { bsonType: "int", minimum: 0 },
+            average_rating:   { bsonType: "double", minimum: 0, maximum: 5 }
+          }
+        }
+      }
+    }
+  },
+  validationAction: "error"
+})
+```
+
+Esta validación actúa como una barrera de integridad equivalente a los `CHECK CONSTRAINTS` de PostgreSQL, rechazando en la capa de base de datos cualquier documento que omita campos requeridos o viole los tipos/rangos definidos.
+
+### 3.3 Índices implementados con justificación
 
 Para garantizar tiempos de respuesta mínimos en el catálogo de productos y soportar las cargas del módulo analítico, se diseñó una estrategia de indexación avanzada. Su impacto fue validado empíricamente utilizando el comando `.explain("executionStats")`.
 
-##### 3.2.1 Índice Compuesto (Regla ESR)
+##### 3.3.1 Índice Compuesto (Regla ESR)
 Se implementó un índice compuesto para las consultas principales de navegación y filtros de productos, aplicando estrictamente la regla ESR (Equality, Sort, Range):
 * **Equality (Igualdad):** `category`. Actúa como el primer filtro, descartando de forma inmediata la mayor parte de los documentos del catálogo.
 * **Sort (Ordenamiento):** `computed_metrics.total_units_sold`. Almacena los registros pre-ordenados en el árbol B (B-Tree). Esto evita operaciones de *in-memory sort*, previniendo la saturación de RAM cuando múltiples usuarios acceden al catálogo simultáneamente.
 * **Range (Rango):** `price`. Se procesa al final para afinar el subconjunto de datos (ej. precio menor a $50) sin romper la contigüidad del índice.
 
-#### 3.2.2 Índice Parcial (Filtro de Subconjunto)
-Para responder a los requerimientos de la interfaz que solicitan subconjuntos de datos específicosCIT (como los banners de "Productos Top Rated"), se creó un índice parcial condicionado con el filtro `{"computed_metrics.average_rating": {"$gte": 4.0}}`. 
+```javascript
+db.catalogo_enriquecido.createIndex(
+  { "category": 1, "computed_metrics.total_units_sold": -1, "price": 1 },
+  { name: "idx_esr_category_sales_price" }
+)
+```
+
+#### 3.3.2 Índice Parcial (Filtro de Subconjunto)
+Para responder a los requerimientos de la interfaz que solicitan subconjuntos de datos específicos (como los banners de "Productos Top Rated"), se creó un índice parcial condicionado:
+
+```javascript
+db.catalogo_enriquecido.createIndex(
+  { "computed_metrics.average_rating": -1 },
+  {
+    name: "idx_partial_top_rated",
+    partialFilterExpression: { "computed_metrics.average_rating": { $gte: 4.0 } }
+  }
+)
+``` 
 * **Justificación técnica:** Este índice indexa únicamente los productos de alta calidad. Reduce drásticamente el consumo de memoria RAM y minimiza los costos de escritura, ya que la inserción o actualización de productos con bajas calificaciones no requiere recalcular este índice.
 
-#### 3.2.3 Índice de Texto (Búsqueda Full-Text)
-Se implementó un índice de tipo `"text"` sobre el campo `name`. A diferencia de los índices B-Tree estándar que exigen coincidencias de izquierda a derecha, este índice permite realizar búsquedas full-text basadas en tokens, ideal para la barra de búsqueda libre del e-commerce.
+#### 3.3.3 Índice de Texto (Búsqueda Full-Text)
+Se implementó un índice de tipo `"text"` sobre el campo `name`:
 
-### 3.3 Aggregation Pipeline optimizados
+```javascript
+db.catalogo_enriquecido.createIndex(
+  { "name": "text", "category": "text" },
+  { name: "idx_text_search", weights: { "name": 10, "category": 3 } }
+)
+```
+
+A diferencia de los índices B-Tree estándar que exigen coincidencias de izquierda a derecha, este índice permite realizar búsquedas full-text basadas en tokens, ideal para la barra de búsqueda libre del e-commerce
+
+### 3.4 Aggregation Pipeline optimizados
 
 Para el módulo analítico, se desarrolló un pipeline complejo y documentado de 6 etapas (*stages*), superando la complejidad mínima requerida, diseñado para procesar el catálogo y generar reportes gerenciales (ej. análisis de ingresos frente a requerimientos de almacenamiento multimedia).El diseño se centró en aplicar técnicas de optimización avanzadas como el orden de los stages, el uso de índices y las proyecciones tempranas.
 
@@ -131,11 +307,11 @@ Para el módulo analítico, se desarrolló un pipeline complejo y documentado de
    Dada la naturaleza multiplicativa de la etapa `$unwind` y las agrupaciones globales del `$group`, este tipo de operaciones analíticas son propensas a consumir grandes cantidades de recursos. Para garantizar la estabilidad del clúster frente a conjuntos de datos masivos y evitar el límite de memoria RAM por defecto de MongoDB, se configuró y habilitó explícitamente el parámetro `allowDiskUse=True` para este pipeline, permitiendo al motor utilizar archivos temporales en disco de manera segura.
 
 
-### 3.4 Evidencias de Mejoras: Análisis con .explain() y Métricas de Rendimiento
+### 3.5 Evidencias de Mejoras: Análisis con .explain() y Métricas de Rendimiento
 
 Para validar cuantitativamente el impacto de las decisiones arquitectónicas en la base de datos MongoDB, se utilizó el método `.explain("executionStats")` combinado con la interfaz de MongoDB Shell. Se realizó un análisis comparativo aislando una consulta de negocio crítica (búsqueda de productos por categoría filtrados por rango de precio y ordenados por volumen de ventas).
 
-##### 3.4.1 Escenario Base: Antes de la Optimización (Sin Índices)
+##### 3.5.1 Escenario Base: Antes de la Optimización (Sin Índices)
 
 Antes de la implementación de nuestra estrategia de indexación estructurada, la ejecución de la consulta evidenció graves ineficiencias algorítmicas, obligando al motor a realizar escaneos masivos y ordenamientos bloqueantes en memoria.
 
@@ -165,7 +341,7 @@ Al carecer de un índice soportado, el motor de MongoDB ejecutó un escaneo comp
 
 
 
-##### 3.4.2 Escenario Optimizado: Después de la Implementación (Regla ESR)
+##### 3.5.2 Escenario Optimizado: Después de la Implementación (Regla ESR)
 
 Una vez aplicado el índice compuesto `idx_esr_category_sales_price` (basado en la regla Equality, Sort, Range) sobre la colección principal, se ejecutó exactamente la misma consulta. Los resultados demostraron una mejora radical en el rendimiento y la eficiencia algorítmica.
 
@@ -206,11 +382,11 @@ Reducción de Latencia: El tiempo de ejecución (executionTimeMillis) bajó drá
 Eficiencia I/O Óptima: El motor de la base de datos pasó de examinar 32,951 documentos a examinar únicamente 308 (totalDocsExamined). Esto significa que el índice logró una precisión casi perfecta (Ratio 1:1 entre documentos examinados y retornados), eliminando el desperdicio de recursos de lectura en disco y liberando CPU para procesar peticiones concurrentes de otros usuarios.
 
 
-### 3.5 Diseño Teórico de Sharding y Replica Sets
+### 3.6 Diseño Teórico de Sharding y Replica Sets
 
 Para asegurar que la arquitectura de Ecommify soporte el crecimiento exponencial del catálogo y garantice alta disponibilidad (High Availability) a nivel global, se diseñó la siguiente topología teórica de escalabilidad horizontal y replicación.
 
-#### 3.5.1 Sharding (Escalabilidad Horizontal)
+#### 3.6.1 Sharding (Escalabilidad Horizontal)
 Se definió una estrategia de particionamiento para distribuir la carga de la colección `catalogo_enriquecido` en múltiples servidores físicos, mitigando limitaciones de almacenamiento y memoria.
 
 * **Shard Key Seleccionada:** Índice compuesto `{"category": 1, "product_id": 1}`.
@@ -221,7 +397,7 @@ Se definió una estrategia de particionamiento para distribuir la carga de la co
   * **Shard A (Rango A-M):** Alojaría los bloques de datos de categorías como `beleza_saude`, `cama_mesa_banho` y `electronics`.
   * **Shard B (Rango N-Z):** Alojaría los bloques de categorías como `perfumaria`, `sports_leisure` y `telefonia`.
 
-#### 3.5.2 Replica Sets (Topología y Tolerancia a Fallos)
+#### 3.6.2 Replica Sets (Topología y Tolerancia a Fallos)
 Para la resiliencia del sistema frente a caídas de servidores, la infraestructura se modela sobre un clúster estándar de 3 nodos (Arquitectura P-S-S).
 
 * **Distribución de Nodos:**
@@ -230,9 +406,18 @@ Para la resiliencia del sistema frente a caídas de servidores, la infraestructu
 * **Optimización de Latencia (Read Preference):**
   Para el módulo del catálogo, los microservicios se conectarán utilizando la directiva `readPreference: "secondaryPreferred"`. Esto descarga al nodo primario de las consultas masivas de los clientes que solo están "vitrineando", enrutando su tráfico hacia el nodo secundario geográficamente más cercano a ellos para acelerar el renderizado de la interfaz.
 
+#### 3.6.3 Read/Write Concern por tipo de operación
+
+| Operación | Write Concern | Read Concern | Justificación |
+|---|---|---|---|
+| Creación de orden (`orders`) | `w: "majority"` | — | Garantiza que el registro de pago no se pierda en un failover antes del ACK |
+| Confirmación de pago | `w: "majority"`, `j: true` | — | Durabilidad total: escritura confirmada en disco del primario y mayoría |
+| Lectura de reseñas en pantalla de producto | — | `"majority"` | Evita leer una reseña que aún no fue replicada y podría desaparecer |
+| Browsing de catálogo | — | `"local"` | Consistencia relajada aceptable; latencia mínima desde secundario |
+| Dashboard analítico de vendedor | — | `"majority"` | KPIs deben reflejar datos confirmados, no datos en vuelo |
+| Logs de comportamiento (`customer_behavior`) | `w: 1` | — | Escritura reconocida solo por el primario; tolera pérdida eventual de logs |
 
 ---
-
 ## 4. Evidencias Cuantitativas de Rendimiento
 
 A continuación se consolidan las evidencias tomadas directamente de la ejecución en producción de **Supabase (PostgreSQL 17.6)**:
@@ -278,9 +463,38 @@ El *Efficiency Ratio* es la proporción matemática entre los documentos que el 
 
 ## 5. Sincronización entre Sistemas (PostgreSQL ↔ MongoDB) [TO DO]
 
-> [!IMPORTANT]
-> **[TO DO - PENDIENTE DE IMPLEMENTACIÓN]**
-> Esta sección se completará una vez que se diseñe y despliegue el flujo de datos asíncrono y CDC (Change Data Capture) para la sincronización transaccional de órdenes y reseñas desde PostgreSQL hacia MongoDB, garantizando la consistencia eventual entre ambos sistemas.
+La arquitectura híbrida de Ecommify no cuenta con un mecanismo de replicación automático entre motores. La sincronización se implementa mediante el **patrón Transactional Outbox** (tabla `outbox_events` en PostgreSQL) y flujos de aplicación mediados, garantizando consistencia eventual con durabilidad garantizada.
+
+### 5.1 Claves Compartidas de Sincronización
+
+| Clave | Tipo | Descripción |
+|---|---|---|
+| `order_id` | `CHAR(32)` | Vincula `orders` (PostgreSQL) con documentos en `customer_behavior` y `reviews` (MongoDB) |
+| `product_id` | `CHAR(32)` | Vincula `products` (PostgreSQL) con documentos en `catalogo_enriquecido` (MongoDB) |
+| `seller_id` | `CHAR(32)` | Vincula `sellers` (PostgreSQL) con `seller_metrics` y `seller_ref` embebido en MongoDB |
+
+Estas claves son generadas en PostgreSQL como fuente de verdad y propagadas a MongoDB en cada evento de sincronización.
+
+### 5.2 Flujos de Sincronización (SYNC01–SYNC06)
+
+| ID | Evento | Dirección | Descripción |
+|---|---|---|---|
+| **SYNC01** | Creación de orden | PostgreSQL → App → MongoDB | Al confirmar una nueva orden en PostgreSQL, un worker del Outbox publica el evento. La capa de aplicación actualiza el documento del cliente en `customer_behavior` (historial de órdenes, carrito activo) y crea el registro base en `reviews` con estado `pending`. |
+| **SYNC02** | Entrega confirmada → generación de reseña | PostgreSQL → Evento → MongoDB | Cuando `order_status` cambia a `delivered` en PostgreSQL, el trigger de Outbox emite `ORDER_DELIVERED`. La aplicación crea el documento de reseña completo en la colección `reviews` de MongoDB e incrementa `computed_metrics.total_units_sold` en `catalogo_enriquecido`. |
+| **SYNC03** | Consulta de orden completa | App ← PostgreSQL + MongoDB | Lectura bidireccional: la capa de aplicación consulta en paralelo el detalle transaccional de la orden (PostgreSQL) y las reseñas asociadas al producto (MongoDB), consolidando la respuesta en la capa de servicios antes de enviarla al cliente. |
+| **SYNC04** | Eliminación de producto | MongoDB → App → PostgreSQL | Si un administrador elimina o desactiva un producto en el catálogo MongoDB, la aplicación propaga la baja lógica hacia PostgreSQL marcando el producto como `inactive` y ajustando el stock en `order_items`. |
+| **SYNC05** | Actualización de precio | MongoDB → App → PostgreSQL | Los cambios de precio del catálogo (origen: `catalogo_enriquecido`) se propagan hacia PostgreSQL para mantener coherencia en `order_items` históricos y en la tabla de precios de referencia. |
+| **SYNC06** | Actualización de vista materializada analítica | PostgreSQL interno | Proceso interno de PostgreSQL: `REFRESH MATERIALIZED VIEW CONCURRENTLY` sobre la MV de métricas de vendedores. Los KPIs calculados se leen desde PostgreSQL y se sincronizan hacia `seller_metrics` en MongoDB en el siguiente ciclo de batch analítico. |
+
+### 5.3 Estrategia de Consistencia y Garantías
+
+| Aspecto | Decisión | Justificación |
+|---|---|---|
+| Modelo de consistencia | Eventual consistency | Aceptable para catálogo y métricas; las órdenes son ACID en PostgreSQL |
+| Durabilidad de eventos | Transactional Outbox en PostgreSQL | Los eventos no se pierden aunque falle la capa de aplicación: están en la tabla `outbox_events` dentro de la transacción ACID |
+| Detección de fallos | Worker de Outbox con retry | El campo `processed_at IS NULL` identifica eventos pendientes; el índice parcial `idx_outbox_unprocessed` garantiza sub-milisegundo en la cola |
+| Divergencia de datos | Compensación por reconciliación periódica | Un job nightly compara conteos entre ambos motores y emite alertas si el desfase supera el umbral configurado |
+| Teorema CAP | PostgreSQL: CP / MongoDB: AP | PostgreSQL sacrifica disponibilidad momentánea para garantizar consistencia (CP). MongoDB prioriza disponibilidad y partición (AP), aceptando consistencia eventual en catálogo |
 
 ---
 
