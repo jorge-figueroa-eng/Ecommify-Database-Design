@@ -1,0 +1,4 @@
+query,execution_time_before_ms,execution_time_after_ms,total_docs_examined_before,total_docs_examined_after,total_keys_examined_before,total_keys_examined_after,n_returned_before,n_returned_after,efficiency_before,efficiency_after,improvement_percent,notes
+revenue_by_state_payment,,,,,,,,,,,,
+reviews_quality_pipeline,,,,,,,,,,,,
+product_catalog_search,,,,,,,,,,,,
