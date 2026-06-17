@@ -13,8 +13,6 @@ Ecommify_Etapa2_Completa/
 ├── .env.example
 ├── requirements.txt
 ├── docs/
-│   ├── Etapa_2_Documento_Tecnico.md
-│   ├── Etapa_2_Documento_Tecnico.docx
 │   ├── checklist_rubrica.md
 │   ├── sync_postgresql_mongodb.md
 │   ├── monitoreo_rendimiento.md
