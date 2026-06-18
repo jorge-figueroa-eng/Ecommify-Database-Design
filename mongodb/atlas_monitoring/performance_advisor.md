@@ -1,15 +1,14 @@
 # MongoDB Atlas Performance Advisor
 
-## Evidencias requeridas
+## Evidencia requerida
 
-Capturar pantalla de:
+Capturar pantalla en:
 
-1. Cluster > Performance Advisor.
-2. Recomendaciones de indices, si existen.
-3. Query Targeting Scanned Objects / Returned.
-4. Latencia promedio de operaciones.
+`evidences/mongodb/screenshots/01_performance_advisor.png`
 
-## Interpretacion esperada
+## Qué documentar
 
-- Si Performance Advisor recomienda indices equivalentes a los scripts, se documenta como validacion.
-- Si no recomienda indices, se documenta que los indices actuales ya cubren las consultas principales o que el volumen no genero suficientes slow queries.
+- Índices sugeridos por Atlas.
+- Si las sugerencias fueron aplicadas o descartadas.
+- Justificación técnica.
+- Impacto esperado en `executionTimeMillis` y `totalDocsExamined`.

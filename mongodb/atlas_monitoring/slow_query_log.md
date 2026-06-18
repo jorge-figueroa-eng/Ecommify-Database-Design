@@ -1,13 +1,16 @@
 # Slow Query Log
 
-## Consulta de revision
+## Evidencia requerida
 
-En MongoDB Atlas revisar:
+Capturar consulta lenta antes de optimizar y guardar:
 
-`Database > Profiler / Performance > Slow Queries`
+`evidences/mongodb/screenshots/02_slow_query_log.png`
 
-## Evidencia minima
+## Métricas mínimas
 
-| Query | Duracion | Coleccion | Indice usado | Accion |
-|---|---:|---|---|---|
-| pipeline revenue by state | completar | orders_analytics | completar | optimizada con indice ESR |
+- Namespace.
+- Tiempo de ejecución.
+- Docs examinados.
+- Keys examinadas.
+- Plan usado.
+- Índice seleccionado después de optimizar.

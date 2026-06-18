@@ -1,9 +1,19 @@
 # Limitaciones y workarounds
 
-| Limitacion | Impacto | Workaround |
-|---|---|---|
-| Free tier de MongoDB Atlas no permite sharding real | No se puede desplegar cluster sharded real | Entregar diseno teorico y simulacion de distribucion |
-| Carga de CSV grandes por SQL editor puede fallar | Timeouts o errores de memoria | Usar Colab/Python por lotes |
-| Falta de `order_items` en los archivos cargados aqui | No se calculan ventas reales por producto-vendedor | Cargar archivo desde repositorio si existe o declarar alcance |
-| Metricas dependen del cluster real | No se deben inventar tiempos | Ejecutar scripts y registrar resultados reales |
-| `validationAction: error` puede bloquear carga por datos sucios | Fallo de ingesta | Usar `warn` durante carga inicial y endurecer despues |
+## Limitaciones del free tier
+
+- MongoDB Atlas free/shared puede limitar sharding real.
+- Supabase free tier puede limitar recursos de CPU, memoria y conexiones.
+- Las métricas pueden variar según carga del servicio y región.
+
+## Workarounds
+
+- Documentar sharding como diseño teórico, tal como permite la guía.
+- Usar `allowDiskUse` en pipelines de MongoDB.
+- Crear índices antes de consultas analíticas recurrentes.
+- Usar particionamiento declarativo para consultas temporales en PostgreSQL.
+- Ejecutar benchmarks varias veces y reportar promedio.
+
+## Dataset incompleto
+
+Si no se dispone de `olist_order_items_dataset.csv`, no se deben inventar ventas por producto-vendedor. Se recomienda documentar la limitación y centrar el análisis en órdenes, pagos, clientes, reviews, catálogo y geolocalización.

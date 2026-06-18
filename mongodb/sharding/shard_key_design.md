@@ -1,8 +1,8 @@
-# Diseno teorico de sharding para Ecommify
+# Diseño teórico de sharding - Ecommify
 
-## Coleccion candidata
+## Colección candidata
 
-`orders_analytics`, porque concentra consultas por estado, fecha, estado de orden y resumen de pagos.
+`orders_analytics`
 
 ## Shard key propuesta
 
@@ -10,22 +10,22 @@
 { "customer.state": 1, "purchase_year_month": 1, "order_id": "hashed" }
 ```
 
-## Justificacion tecnica
+## Justificación
 
-- `customer.state`: soporta consultas regionales frecuentes.
-- `purchase_year_month`: soporta ventanas temporales y dashboards mensuales.
-- `order_id hashed`: reduce el riesgo de concentracion en estados con alto volumen como SP.
+- `customer.state` permite direccionar consultas analíticas regionales.
+- `purchase_year_month` permite segmentar por ventana temporal.
+- `order_id` con hash reduce riesgo de concentración cuando estados de alto volumen, como SP, concentran gran parte de las órdenes.
 
-## Riesgo de shard key simple
+## Riesgo mitigado
 
-Si se usa solo `customer.state`, SP concentra 41,746 ordenes del dataset cargado, por lo que puede generar skew.
+Usar solo `customer.state` generaría skew, porque la distribución de órdenes no es uniforme entre estados. El componente temporal y el hash de `order_id` aumentan la cardinalidad y distribuyen escrituras/lecturas.
 
-## Simulacion de distribucion con hash de order_id en 3 shards
+## Comando teórico
 
-| Shard | Ordenes | Porcentaje |
-|---|---:|---:|
-| Shard 0 | 33,283 | 33.47% |
-| Shard 1 | 33,225 | 33.41% |
-| Shard 2 | 32,933 | 33.12% |
-
-La distribucion queda cercana a 33% por shard, por lo que el componente hash ayuda a balancear.
+```javascript
+sh.enableSharding("ecommify")
+sh.shardCollection(
+  "ecommify.orders_analytics",
+  { "customer.state": 1, "purchase_year_month": 1, "order_id": "hashed" }
+)
+```

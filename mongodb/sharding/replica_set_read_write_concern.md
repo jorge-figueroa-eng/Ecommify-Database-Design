@@ -1,21 +1,24 @@
 # Replica set y estrategias Read/Write Concern
 
-## Topologia teorica
+## Topología propuesta
 
-```text
-Replica Set rs-ecommify
-├── Nodo 1: Primary - region principal
-├── Nodo 2: Secondary - misma region o region cercana
-└── Nodo 3: Secondary - region alterna para tolerancia a fallos
-```
+- Nodo 1: Primary
+- Nodo 2: Secondary
+- Nodo 3: Secondary
 
-## Estrategias por operacion
+## Distribución geográfica sugerida
 
-| Operacion | Read Concern | Write Concern | Razon |
+- Primary en región principal de operación.
+- Secondary 1 en la misma región para baja latencia.
+- Secondary 2 en región alternativa para tolerancia a fallos.
+
+## Estrategias por operación
+
+| Operación | Read Concern | Write Concern | Justificación |
 |---|---|---|---|
-| Carga historica CSV | local | w:1 | Prioriza velocidad durante ingesta masiva. |
-| Registro de pagos | majority | majority | Dato critico y financiero. |
-| Ordenes nuevas | majority | majority | Requiere consistencia fuerte. |
-| Dashboard analitico | local | no aplica | Lectura rapida y tolerante a pequena latencia. |
-| Reviews | local | w:1 | Escritura no critica; eventual consistency aceptable. |
-| Cierre/reportes | majority | majority | Requiere lectura consistente para indicadores finales. |
+| Carga histórica CSV | local | w:1 | Prioriza velocidad de importación. |
+| Registro de orden nueva | majority | majority | Requiere consistencia transaccional. |
+| Pagos | majority | majority | Información crítica del negocio. |
+| Dashboard analítico | local | No aplica | Prioriza baja latencia. |
+| Reviews | local | w:1 | Escritura de menor criticidad. |
+| Conciliación financiera | majority | majority | Debe leer datos confirmados. |

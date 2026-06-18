@@ -1,27 +1,27 @@
 // 05_geolocation_points_schema.js
-// GeoJSON para consultas espaciales en MongoDB.
-db = db.getSiblingDB("ecommify");
+// Puntos geográficos en GeoJSON para consultas 2dsphere.
 
-db.createCollection("geolocation_points", {
+const dbName = process.env.MONGODB_DATABASE || 'ecommify';
+const database = db.getSiblingDB(dbName);
+
+database.createCollection('geolocation_points', {
   validator: {
     $jsonSchema: {
-      bsonType: "object",
-      required: ["zip_code_prefix", "city", "state", "location"],
+      bsonType: 'object',
+      required: ['zip_code_prefix', 'city', 'state', 'location'],
       properties: {
-        zip_code_prefix: { bsonType: ["int", "long"] },
-        city: { bsonType: "string" },
-        state: { bsonType: "string" },
+        zip_code_prefix: { bsonType: ['int', 'long', 'string'] },
+        city: { bsonType: 'string' },
+        state: { bsonType: 'string' },
         location: {
-          bsonType: "object",
-          required: ["type", "coordinates"],
+          bsonType: 'object',
+          required: ['type', 'coordinates'],
           properties: {
-            type: { enum: ["Point"] },
-            coordinates: { bsonType: "array" }
+            type: { enum: ['Point'] },
+            coordinates: { bsonType: 'array', minItems: 2, maxItems: 2 }
           }
         }
       }
     }
-  },
-  validationLevel: "moderate",
-  validationAction: "warn"
+  }
 });
