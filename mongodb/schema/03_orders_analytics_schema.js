@@ -1,39 +1,39 @@
 // 03_orders_analytics_schema.js
-// Modelo analitico con Extended Reference Pattern.
-db = db.getSiblingDB("ecommify");
+// Extended Reference Pattern: orden analítica con datos mínimos embebidos del cliente y pago.
 
-db.createCollection("orders_analytics", {
+const dbName = process.env.MONGODB_DATABASE || 'ecommify';
+const database = db.getSiblingDB(dbName);
+
+database.createCollection('orders_analytics', {
   validator: {
     $jsonSchema: {
-      bsonType: "object",
-      required: ["order_id", "status", "purchase_ts", "purchase_year_month", "customer"],
+      bsonType: 'object',
+      required: ['order_id', 'status', 'purchase_ts', 'purchase_year_month', 'customer'],
       properties: {
-        order_id: { bsonType: "string" },
-        status: { bsonType: "string" },
-        purchase_ts: { bsonType: "date" },
-        purchase_year_month: { bsonType: "string" },
+        order_id: { bsonType: 'string' },
+        status: { bsonType: 'string' },
+        purchase_ts: { bsonType: 'date' },
+        purchase_year_month: { bsonType: 'string' },
         customer: {
-          bsonType: "object",
-          required: ["customer_id", "state", "city"],
+          bsonType: 'object',
+          required: ['customer_id', 'state', 'city'],
           properties: {
-            customer_id: { bsonType: "string" },
-            customer_unique_id: { bsonType: ["string", "null"] },
-            state: { bsonType: "string" },
-            city: { bsonType: "string" },
-            zip_code_prefix: { bsonType: ["int", "long", "string", "null"] }
+            customer_id: { bsonType: 'string' },
+            customer_unique_id: { bsonType: ['string', 'null'] },
+            state: { bsonType: 'string' },
+            city: { bsonType: 'string' },
+            zip_code_prefix: { bsonType: ['int', 'long', 'string', 'null'] }
           }
         },
         payment_summary: {
-          bsonType: "object",
+          bsonType: 'object',
           properties: {
-            total_value: { bsonType: ["double", "int", "long", "decimal", "null"] },
-            payment_types: { bsonType: "array" },
-            installments_max: { bsonType: ["int", "long", "null"] }
+            total_value: { bsonType: ['double', 'decimal', 'int', 'long', 'null'] },
+            payment_types: { bsonType: 'array' },
+            max_installments: { bsonType: ['int', 'long', 'null'] }
           }
         }
       }
     }
-  },
-  validationLevel: "moderate",
-  validationAction: "warn"
+  }
 });

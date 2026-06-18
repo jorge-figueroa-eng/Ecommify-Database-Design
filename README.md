@@ -1,113 +1,128 @@
-# Ecommify - Entrega Etapa 2: Implementacion tecnica PostgreSQL y MongoDB
+# Ecommify Database Optimization - Etapa 2
 
-Este paquete contiene una entrega completa para la **Etapa 2 - Implementacion tecnica completa en PostgreSQL y MongoDB**.
-Incluye documento tecnico, scripts SQL, scripts MongoDB, pipelines, plantillas de evidencias, notebooks de Colab y guion de video.
+Repositorio preparado para cumplir la rúbrica de la **Etapa 2: Implementación técnica completa en PostgreSQL y MongoDB**.
 
-> Nota importante: las metricas reales de `EXPLAIN ANALYZE` y `.explain("executionStats")` deben generarse en la instancia final de Supabase y MongoDB Atlas del equipo. El paquete incluye scripts y plantillas para capturarlas sin inventar resultados.
+Incluye:
 
-## 1. Estructura
+- Implementación PostgreSQL/Supabase con esquema completo, constraints, tipos avanzados, extensiones, particionamiento e índices especializados.
+- Implementación MongoDB Atlas con modelado documental, JSON Schema, Attribute Pattern, Extended Reference Pattern y Bucket Pattern.
+- Optimización con índices B-tree, GIN, GiST, BRIN en PostgreSQL e índices compuestos, parciales, texto y geoespaciales en MongoDB.
+- Pipelines de aggregation con mínimo 5 stages, `allowDiskUse`, `.explain("executionStats")` y plantillas para evidencias cuantitativas antes/después.
+- Documentación técnica, sincronización PostgreSQL → MongoDB, sharding teórico, replica set, monitoreo y guion de video.
+
+> Nota de entrega: las métricas reales de ejecución deben obtenerse en la instancia final de Supabase y MongoDB Atlas del equipo. Este repositorio trae los scripts exactos para generarlas y los CSV listos para llenar con resultados reales.
+
+## 1. Tecnologías
+
+- PostgreSQL / Supabase
+- MongoDB Atlas
+- PostGIS
+- pg_trgm
+- Python 3.11+
+- Google Colab / Jupyter
+- mongosh
+- psql
+
+## 2. Dataset esperado
+
+Ubicar los CSV en `data/raw/`:
 
 ```text
-Ecommify_Etapa2_Completa/
-├── README.md
-├── .env.example
-├── requirements.txt
-├── docs/
-│   ├── checklist_rubrica.md
-│   ├── sync_postgresql_mongodb.md
-│   ├── monitoreo_rendimiento.md
-│   ├── limitaciones_y_workarounds.md
-│   └── video_demo_script.md
-├── postgresql/
-│   ├── schema_final/
-│   ├── supabase/
-│   ├── queries/
-│   └── load/
-├── mongodb/
-│   ├── schema/
-│   ├── indexes/
-│   ├── pipelines/
-│   ├── explain/
-│   ├── sharding/
-│   └── atlas_monitoring/
-├── notebooks/
-└── evidences/
+olist_customers_dataset.csv
+olist_geolocation_dataset.csv
+olist_order_payments_dataset.csv
+olist_order_reviews_dataset.csv
+olist_orders_dataset.csv
+olist_products_dataset.csv
+olist_sellers_dataset.csv
+olist_order_items_dataset.csv                 # recomendado para análisis producto-vendedor
+product_category_name_translation.csv
 ```
 
-## 2. Dataset utilizado
+Si no se tiene `olist_order_items_dataset.csv`, documentar la limitación en `docs/limitaciones_y_workarounds.md`.
 
-| Dataset | Filas | Uso |
-|---|---:|---|
-| customers | 99,441 | Clientes, ciudad y estado |
-| geolocation | 1,000,163 | PostGIS y consultas espaciales |
-| order_payments | 103,886 | Metodos de pago y valor pagado |
-| order_reviews | 104,719 | Calificaciones y comentarios |
-| orders | 99,441 | Ordenes, estados y fechas |
-| products | 32,951 | Catalogo de productos |
-| sellers | 3,095 | Vendedores por ciudad/estado |
-| category_translation | 71 | Traduccion de categorias |
+## 3. Variables de entorno
 
-El archivo `olist_order_items_dataset.csv` no fue cargado en esta conversacion. Si el repositorio lo tiene en `postgresql/seed_data/order_items.csv`, se puede cargar con el modelo incluido; si no esta disponible, se debe declarar como limitacion para analisis producto-vendedor-orden.
-
-## 3. Preparacion
-
-1. Crear proyecto en Supabase.
-2. Crear cluster en MongoDB Atlas.
-3. Copiar `.env.example` a `.env`.
-4. Poner las rutas reales de los CSV.
-5. Ejecutar scripts PostgreSQL y MongoDB.
-6. Guardar capturas y metricas en `evidences/`.
-
-## 4. Variables de entorno
+Copiar `.env.example` a `.env` y completar:
 
 ```bash
-SUPABASE_DB_URL="postgresql://postgres:<password>@<host>:5432/postgres"
-MONGODB_URI="mongodb+srv://<user>:<password>@<cluster>.mongodb.net/ecommify"
+SUPABASE_DB_URL="postgresql://USER:PASSWORD@HOST:PORT/postgres"
+MONGODB_URI="mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/ecommify"
 MONGODB_DATABASE="ecommify"
-DATA_DIR="/content/data"
 ```
 
-## 5. Ejecucion PostgreSQL
+## 4. Ejecución PostgreSQL en Supabase
 
 ```bash
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f postgresql/supabase/run_all_supabase.sql
 ```
 
-Luego cargar CSV desde Colab usando `notebooks/02_load_to_supabase.ipynb` o adaptar `postgresql/load/01_copy_from_csv.sql`.
-
-## 6. Ejecucion MongoDB Atlas
+Carga de datos:
 
 ```bash
-mongosh "$MONGODB_URI" mongodb/schema/00_drop_collections.js
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f postgresql/load/copy_commands.sql
+```
+
+Evidencias PostgreSQL:
+
+```bash
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f postgresql/explain/before/01_run_explain_before.sql > evidences/postgresql/explain_before/explain_before.txt
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f postgresql/explain/after/01_run_explain_after.sql > evidences/postgresql/explain_after/explain_after.txt
+```
+
+## 5. Ejecución MongoDB Atlas
+
+```bash
 mongosh "$MONGODB_URI" mongodb/schema/01_products_catalog_schema.js
 mongosh "$MONGODB_URI" mongodb/schema/02_order_reviews_schema.js
 mongosh "$MONGODB_URI" mongodb/schema/03_orders_analytics_schema.js
 mongosh "$MONGODB_URI" mongodb/schema/04_seller_state_buckets_schema.js
 mongosh "$MONGODB_URI" mongodb/schema/05_geolocation_points_schema.js
+```
+
+Crear índices:
+
+```bash
 mongosh "$MONGODB_URI" mongodb/indexes/01_compound_indexes.js
 mongosh "$MONGODB_URI" mongodb/indexes/02_partial_indexes.js
 mongosh "$MONGODB_URI" mongodb/indexes/03_text_indexes.js
 mongosh "$MONGODB_URI" mongodb/indexes/04_geo_indexes.js
 ```
 
-La carga y transformacion documental se hace con `notebooks/04_load_to_mongodb_atlas.ipynb`.
+Ejecutar pipelines:
 
-## 7. Evidencias obligatorias
-
-Guardar aqui:
-
-```text
-evidences/postgresql/postgresql_metrics.csv
-evidences/mongodb/mongodb_metrics.csv
-evidences/postgresql/screenshots/
-evidences/mongodb/screenshots/
-evidences/postgresql/explain_before/
-evidences/postgresql/explain_after/
-evidences/mongodb/explain_before/
-evidences/mongodb/explain_after/
+```bash
+mongosh "$MONGODB_URI" mongodb/pipelines/01_revenue_by_state_payment.js
+mongosh "$MONGODB_URI" mongodb/pipelines/02_reviews_quality_pipeline.js
+mongosh "$MONGODB_URI" mongodb/pipelines/03_product_catalog_search_pipeline.js
 ```
 
-## 8. Entregables finales
+Evidencias MongoDB:
 
-- Documento tecnico: `actividad5/DOCUMENTO_TECNICO.md`.
+```bash
+mongosh "$MONGODB_URI" mongodb/explain/before/01_explain_revenue_before.js > evidences/mongodb/explain_before/revenue_before.json
+mongosh "$MONGODB_URI" mongodb/explain/after/01_explain_revenue_after.js > evidences/mongodb/explain_after/revenue_after.json
+```
 
+## 6. Estructura principal
+
+```text
+postgresql/schema_final/       DDL completo ejecutable en Supabase
+postgresql/queries/            Queries críticas optimizadas
+postgresql/explain/            Scripts EXPLAIN antes/después
+mongodb/schema/                Colecciones con JSON Schema
+mongodb/indexes/               Índices compuestos, parciales, texto, geo
+mongodb/pipelines/             Aggregation pipelines optimizados
+mongodb/sharding/              Diseño teórico sharding y replica set
+evidences/                     Métricas, capturas y resultados antes/después
+notebooks/                     Notebooks Colab documentados
+docs/                          Documento técnico, checklist y 
+```
+
+## 7. Archivos clave para entrega
+
+- `docs/Etapa_2_Documento_Tecnico.md`
+- `docs/Etapa_2_Documento_Tecnico.docx`
+- `docs/checklist_rubrica.md`
+- `evidences/postgresql/postgresql_metrics.csv`
+- `evidences/mongodb/mongodb_metrics.csv`

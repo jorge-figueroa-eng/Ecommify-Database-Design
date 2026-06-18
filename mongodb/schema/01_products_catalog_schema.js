@@ -1,54 +1,54 @@
 // 01_products_catalog_schema.js
-// Modelo de catalogo con Attribute Pattern.
-db = db.getSiblingDB("ecommify");
+// Catálogo de productos con Attribute Pattern y datos embebidos de categoría/dimensiones.
 
-db.createCollection("products_catalog", {
+const dbName = process.env.MONGODB_DATABASE || 'ecommify';
+const database = db.getSiblingDB(dbName);
+
+database.createCollection('products_catalog', {
   validator: {
     $jsonSchema: {
-      bsonType: "object",
-      required: ["product_id", "category", "attributes", "dimensions"],
+      bsonType: 'object',
+      required: ['product_id', 'category', 'attributes', 'dimensions'],
       properties: {
-        product_id: { bsonType: "string" },
+        product_id: { bsonType: 'string' },
         category: {
-          bsonType: "object",
-          required: ["name_pt"],
+          bsonType: 'object',
+          required: ['name_pt'],
           properties: {
-            name_pt: { bsonType: ["string", "null"] },
-            name_en: { bsonType: ["string", "null"] }
+            name_pt: { bsonType: 'string' },
+            name_en: { bsonType: ['string', 'null'] }
           }
         },
         metrics: {
-          bsonType: "object",
+          bsonType: 'object',
           properties: {
-            name_length: { bsonType: ["int", "long", "double", "null"] },
-            description_length: { bsonType: ["int", "long", "double", "null"] },
-            photos_qty: { bsonType: ["int", "long", "double", "null"] }
+            name_length: { bsonType: ['int', 'long', 'double', 'null'] },
+            description_length: { bsonType: ['int', 'long', 'double', 'null'] },
+            photos_qty: { bsonType: ['int', 'long', 'double', 'null'] }
           }
         },
         attributes: {
-          bsonType: "array",
+          bsonType: 'array',
           items: {
-            bsonType: "object",
-            required: ["k", "v"],
+            bsonType: 'object',
+            required: ['k', 'v'],
             properties: {
-              k: { bsonType: "string" },
+              k: { bsonType: 'string' },
               v: {}
             }
           }
         },
         dimensions: {
-          bsonType: "object",
+          bsonType: 'object',
           properties: {
-            weight_g: { bsonType: ["int", "long", "double", "null"] },
-            length_cm: { bsonType: ["int", "long", "double", "null"] },
-            height_cm: { bsonType: ["int", "long", "double", "null"] },
-            width_cm: { bsonType: ["int", "long", "double", "null"] },
-            volume_cm3: { bsonType: ["int", "long", "double", "null"] }
+            weight_g: { bsonType: ['int', 'long', 'double', 'null'] },
+            length_cm: { bsonType: ['int', 'long', 'double', 'null'] },
+            height_cm: { bsonType: ['int', 'long', 'double', 'null'] },
+            width_cm: { bsonType: ['int', 'long', 'double', 'null'] },
+            volume_cm3: { bsonType: ['int', 'long', 'double', 'null'] }
           }
         }
       }
     }
-  },
-  validationLevel: "moderate",
-  validationAction: "warn"
+  }
 });

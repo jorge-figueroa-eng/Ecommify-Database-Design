@@ -1,6 +1,5 @@
 -- run_all_supabase.sql
--- Ejecutar desde la raiz del paquete:
--- psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f postgresql/supabase/run_all_supabase.sql
+-- Script maestro ejecutable en Supabase.
 
 \i postgresql/schema_final/01_extensions.sql
 \i postgresql/schema_final/02_types.sql

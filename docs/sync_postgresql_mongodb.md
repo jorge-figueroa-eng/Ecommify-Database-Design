@@ -1,22 +1,24 @@
-# Sincronizacion PostgreSQL - MongoDB
+# Sincronización PostgreSQL → MongoDB
 
-## Estrategia
+## Estrategia seleccionada
 
-Se implementa el patron Transactional Outbox.
+Se usa el patrón **Transactional Outbox**.
 
 ## Flujo
 
-1. PostgreSQL recibe la operacion transaccional.
-2. La transaccion escribe en tablas relacionales y en `outbox_events`.
-3. Un proceso worker consulta eventos pendientes.
-4. El worker transforma la informacion al modelo documental.
-5. MongoDB actualiza `orders_analytics`, `products_catalog`, `seller_state_buckets` u otra coleccion.
-6. El evento se marca como `processed`.
+1. PostgreSQL registra la transacción principal en tablas relacionales.
+2. En la misma transacción se inserta un evento en `outbox_events`.
+3. Un worker lee eventos pendientes.
+4. El worker transforma la información al modelo documental.
+5. MongoDB actualiza `orders_analytics`, `products_catalog` o colecciones analíticas.
+6. El evento queda marcado con `processed_at`.
 
-## Consistencia
+## Tipo de consistencia
 
-Se usa consistencia eventual. PostgreSQL es la fuente de verdad para datos transaccionales y MongoDB es una proyeccion analitica.
+Se adopta **consistencia eventual**. PostgreSQL mantiene la fuente de verdad transaccional y MongoDB sirve consultas analíticas de baja latencia.
 
-## Ventaja
+## Ventajas
 
-Evita transacciones distribuidas y mantiene bajo acoplamiento entre motores.
+- Evita transacciones distribuidas entre PostgreSQL y MongoDB.
+- Permite reintentos controlados.
+- Facilita auditoría por medio de `outbox_events`.

@@ -1,30 +1,30 @@
 // 04_seller_state_buckets_schema.js
-// Bucket Pattern para agrupar vendedores por estado.
-db = db.getSiblingDB("ecommify");
+// Bucket Pattern: vendedores agrupados por estado para analítica regional.
 
-db.createCollection("seller_state_buckets", {
+const dbName = process.env.MONGODB_DATABASE || 'ecommify';
+const database = db.getSiblingDB(dbName);
+
+database.createCollection('seller_state_buckets', {
   validator: {
     $jsonSchema: {
-      bsonType: "object",
-      required: ["state", "seller_count", "sellers"],
+      bsonType: 'object',
+      required: ['state', 'seller_count', 'sellers'],
       properties: {
-        state: { bsonType: "string" },
-        seller_count: { bsonType: "int" },
+        state: { bsonType: 'string' },
+        seller_count: { bsonType: ['int', 'long'] },
         sellers: {
-          bsonType: "array",
+          bsonType: 'array',
           items: {
-            bsonType: "object",
-            required: ["seller_id", "city"],
+            bsonType: 'object',
+            required: ['seller_id', 'city'],
             properties: {
-              seller_id: { bsonType: "string" },
-              city: { bsonType: "string" },
-              zip_code_prefix: { bsonType: ["int", "long", "string", "null"] }
+              seller_id: { bsonType: 'string' },
+              city: { bsonType: 'string' },
+              zip_code_prefix: { bsonType: ['int', 'long', 'string', 'null'] }
             }
           }
         }
       }
     }
-  },
-  validationLevel: "moderate",
-  validationAction: "warn"
+  }
 });

@@ -1,7 +1,10 @@
 // 04_geo_indexes.js
-db = db.getSiblingDB("ecommify");
+// Índice geoespacial 2dsphere para geolocation_points.
 
-db.geolocation_points.createIndex(
-  { location: "2dsphere" },
-  { name: "idx_geolocation_2dsphere" }
+const dbName = process.env.MONGODB_DATABASE || 'ecommify';
+const database = db.getSiblingDB(dbName);
+
+database.geolocation_points.createIndex(
+  { location: '2dsphere' },
+  { name: 'idx_geolocation_points_2dsphere' }
 );

@@ -1,40 +1,43 @@
 # Monitoreo de rendimiento
 
-## PostgreSQL/Supabase
+## PostgreSQL / Supabase
 
-Ejecutar:
+Métricas mínimas:
 
-```sql
-EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
-SELECT ...;
-```
-
-Revisar:
-
-- Execution Time.
-- Planning Time.
-- Seq Scan vs Index Scan.
-- Buffers hit/read.
-- Rows removed by filter.
-
-## MongoDB Atlas
-
-Revisar:
-
-- Performance Advisor.
-- Slow Query Log.
-- Query Targeting.
-- Index Stats.
+- `Execution Time`.
+- `Planning Time`.
+- `Buffers: shared hit/read`.
+- Tipo de scan: Seq Scan, Index Scan, Bitmap Index Scan.
+- Uso de particiones en `orders_part`.
 
 Comando:
 
-```javascript
-db.orders_analytics.aggregate([{ $indexStats: {} }]);
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT ...;
 ```
 
-## Evidencia minima
+## MongoDB Atlas
 
-Capturas en:
+Métricas mínimas:
 
-- `evidences/postgresql/screenshots/`
-- `evidences/mongodb/screenshots/`
+- `executionTimeMillis`.
+- `totalDocsExamined`.
+- `totalKeysExamined`.
+- `nReturned`.
+- Índice usado.
+- Performance Advisor.
+- Slow Query Log.
+- `$indexStats`.
+
+## Ratio de eficiencia
+
+```text
+efficiency_ratio = totalDocsExamined / max(nReturned, 1)
+```
+
+## Mejora porcentual
+
+```text
+improvement_percent = ((before_ms - after_ms) / before_ms) * 100
+```

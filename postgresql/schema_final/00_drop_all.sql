@@ -1,7 +1,8 @@
 -- 00_drop_all.sql
--- Limpieza segura para ambiente academico/desarrollo. No usar en produccion.
+-- Script opcional para limpiar objetos durante pruebas controladas.
+-- No ejecutar en producción sin respaldo.
+
 DROP MATERIALIZED VIEW IF EXISTS mv_monthly_order_summary CASCADE;
-DROP MATERIALIZED VIEW IF EXISTS mv_payment_method_summary CASCADE;
 DROP TABLE IF EXISTS outbox_events CASCADE;
 DROP TABLE IF EXISTS order_reviews CASCADE;
 DROP TABLE IF EXISTS order_payments CASCADE;
@@ -13,7 +14,7 @@ DROP TABLE IF EXISTS product_categories CASCADE;
 DROP TABLE IF EXISTS sellers CASCADE;
 DROP TABLE IF EXISTS geolocations CASCADE;
 DROP TABLE IF EXISTS customers CASCADE;
+DROP TYPE IF EXISTS address_br CASCADE;
 DROP TYPE IF EXISTS order_status_enum CASCADE;
 DROP TYPE IF EXISTS payment_type_enum CASCADE;
-DROP TYPE IF EXISTS address_br CASCADE;
 DROP DOMAIN IF EXISTS br_state CASCADE;
