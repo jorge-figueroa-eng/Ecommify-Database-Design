@@ -1,6 +1,6 @@
 query,execution_time_before_ms,execution_time_after_ms,planning_time_before_ms,planning_time_after_ms,scan_before,scan_after,buffers_before,buffers_after,improvement_percent,notes
-q01_orders_by_state_month,,,,,,,,,,
-q02_payments_by_type,,,,,,,,,,
-q03_late_deliveries,,,,,,,,,,
-q04_city_trgm_search,,,,,,,,,,
-q05_postgis_nearby_locations,,,,,,,,,,
+q01_orders_by_state_month,,,,,,,,,,Completar con EXPLAIN ANALYZE antes y después de índices/particionamiento
+q02_payments_by_type,,,,,,,,,,Completar con EXPLAIN ANALYZE antes y después del índice idx_payments_type_value
+q03_late_deliveries,,,,,,,,,,Completar con EXPLAIN ANALYZE antes y después de índices temporales
+q04_city_trgm_search,,,,,,,,,,Completar con EXPLAIN ANALYZE antes y después de pg_trgm
+q05_postgis_nearby_locations,,,,,,,,,,Completar con EXPLAIN ANALYZE antes y después de GiST/PostGIS
