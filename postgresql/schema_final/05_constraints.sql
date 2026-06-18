@@ -1,19 +1,50 @@
 -- 05_constraints.sql
--- Constraints e integridad adicional.
+-- Constraints adicionales y validaciones semánticas.
+-- Script idempotente para evitar errores si ya existen las restricciones.
 
-ALTER TABLE order_reviews
-ADD CONSTRAINT IF NOT EXISTS chk_review_answer_after_creation
-CHECK (review_answer_timestamp IS NULL OR review_creation_date IS NULL OR review_answer_timestamp >= review_creation_date);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'uq_order_payment_sequence'
+    ) THEN
+        ALTER TABLE order_payments
+        ADD CONSTRAINT uq_order_payment_sequence
+        UNIQUE (order_id, payment_sequential);
+    END IF;
+END $$;
 
-ALTER TABLE order_items
-ADD CONSTRAINT IF NOT EXISTS chk_order_item_id_positive
-CHECK (order_item_id > 0);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_review_answer_after_creation'
+    ) THEN
+        ALTER TABLE order_reviews
+        ADD CONSTRAINT chk_review_answer_after_creation
+        CHECK (
+            review_answer_timestamp IS NULL
+            OR review_creation_date IS NULL
+            OR review_answer_timestamp >= review_creation_date
+        );
+    END IF;
+END $$;
 
-ALTER TABLE order_payments
-ADD CONSTRAINT IF NOT EXISTS chk_payment_sequential_positive
-CHECK (payment_sequential > 0);
-
-COMMENT ON TABLE customers IS 'Clientes normalizados del dataset Olist/Ecommify.';
-COMMENT ON TABLE geolocations IS 'Geolocalización con columna PostGIS geography(Point,4326).';
-COMMENT ON TABLE orders_part IS 'Tabla particionada por fecha de compra para análisis temporal.';
-COMMENT ON TABLE outbox_events IS 'Transactional Outbox para sincronización eventual hacia MongoDB.';
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_product_dimensions_non_negative'
+    ) THEN
+        ALTER TABLE products
+        ADD CONSTRAINT chk_product_dimensions_non_negative
+        CHECK (
+            (product_length_cm IS NULL OR product_length_cm >= 0)
+            AND (product_height_cm IS NULL OR product_height_cm >= 0)
+            AND (product_width_cm IS NULL OR product_width_cm >= 0)
+        );
+    END IF;
+END $$;

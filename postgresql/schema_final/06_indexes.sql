@@ -1,64 +1,68 @@
 -- 06_indexes.sql
--- Índices especializados requeridos por la rúbrica.
+-- Índices especializados requeridos por la rúbrica:
+-- B-tree, GIN, GiST, BRIN, trigramas y parciales.
+-- Cada sentencia está separada para que PostgreSQL ejecute todo correctamente.
 
--- B-tree: filtros por estado y fecha.
+-- B-tree compuesto para filtros por estado/cliente y ordenamiento temporal.
+CREATE INDEX IF NOT EXISTS idx_customers_state_city
+ON customers (customer_state, customer_city);
+
 CREATE INDEX IF NOT EXISTS idx_orders_status_purchase
 ON orders (order_status, order_purchase_timestamp DESC);
 
+CREATE INDEX IF NOT EXISTS idx_orders_customer_purchase
+ON orders (customer_id, order_purchase_timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_payments_type_value
+ON order_payments (payment_type, payment_value DESC);
+
+-- B-tree sobre tabla particionada para demostrar optimización declarativa.
 CREATE INDEX IF NOT EXISTS idx_orders_part_status_purchase
 ON orders_part (order_status, order_purchase_timestamp DESC);
 
--- BRIN: rangos temporales grandes.
+-- BRIN para rangos temporales grandes y tablas append-only.
 CREATE INDEX IF NOT EXISTS idx_orders_purchase_brin
 ON orders USING BRIN (order_purchase_timestamp);
 
 CREATE INDEX IF NOT EXISTS idx_orders_part_purchase_brin
 ON orders_part USING BRIN (order_purchase_timestamp);
 
--- B-tree compuesto para joins y agrupaciones.
-CREATE INDEX IF NOT EXISTS idx_customers_id_state
-ON customers (customer_id, customer_state);
-
-CREATE INDEX IF NOT EXISTS idx_order_items_product_seller
-ON order_items (product_id, seller_id);
-
-CREATE INDEX IF NOT EXISTS idx_order_items_seller_price
-ON order_items (seller_id, price DESC);
-
-CREATE INDEX IF NOT EXISTS idx_order_payments_type_value
-ON order_payments (payment_type, payment_value DESC);
-
--- GiST/PostGIS: consultas espaciales.
-CREATE INDEX IF NOT EXISTS idx_geolocations_geom_gist
+-- GiST/PostGIS para geolocalización.
+CREATE INDEX IF NOT EXISTS idx_geolocations_geom
 ON geolocations USING GIST (geom);
 
--- GIN + pg_trgm: búsquedas aproximadas de ciudad y comentarios.
+-- GIN/pg_trgm para búsquedas tolerantes a errores tipográficos.
 CREATE INDEX IF NOT EXISTS idx_geolocations_city_trgm
 ON geolocations USING GIN (geolocation_city gin_trgm_ops);
 
 CREATE INDEX IF NOT EXISTS idx_reviews_comment_trgm
 ON order_reviews USING GIN (review_comment_message gin_trgm_ops);
 
--- GIN JSONB: consultas sobre metadata y atributos.
-CREATE INDEX IF NOT EXISTS idx_products_attributes_gin
-ON products USING GIN (attributes jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS idx_products_category_trgm
+ON product_categories USING GIN (product_category_name_english gin_trgm_ops);
 
-CREATE INDEX IF NOT EXISTS idx_products_metadata_gin
-ON products USING GIN (metadata);
+-- GIN para JSONB y arrays.
+CREATE INDEX IF NOT EXISTS idx_products_specs_gin
+ON products USING GIN (specs);
 
--- GIN arrays: etiquetas.
-CREATE INDEX IF NOT EXISTS idx_customer_tags_gin
+CREATE INDEX IF NOT EXISTS idx_customers_tags_gin
 ON customers USING GIN (customer_tags);
 
-CREATE INDEX IF NOT EXISTS idx_review_tags_gin
+CREATE INDEX IF NOT EXISTS idx_reviews_tags_gin
 ON order_reviews USING GIN (review_tags);
 
--- Índice parcial: subconjunto crítico para entregas reales.
-CREATE INDEX IF NOT EXISTS idx_orders_delivered_purchase_partial
-ON orders (order_purchase_timestamp DESC, customer_id)
+-- Índice parcial para subconjunto crítico: órdenes entregadas.
+CREATE INDEX IF NOT EXISTS idx_orders_delivered_purchase
+ON orders (order_purchase_timestamp DESC)
 WHERE order_status = 'delivered';
 
--- Índice parcial: reseñas negativas con comentario.
-CREATE INDEX IF NOT EXISTS idx_reviews_low_score_with_comment_partial
+-- Índice parcial para reviews negativas con comentario.
+CREATE INDEX IF NOT EXISTS idx_reviews_low_score_comment
 ON order_reviews (review_score, review_creation_date DESC)
-WHERE review_score <= 3 AND review_comment_message IS NOT NULL;
+WHERE review_score <= 3
+  AND review_comment_message IS NOT NULL;
+
+-- Índice parcial para outbox pendiente, útil para la sincronización PostgreSQL -> MongoDB.
+CREATE INDEX IF NOT EXISTS idx_outbox_pending_created
+ON outbox_events (created_at)
+WHERE status = 'pending';
