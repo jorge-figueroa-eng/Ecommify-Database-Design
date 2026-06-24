@@ -104,7 +104,7 @@ notebooks/02_load_to_supabase.ipynb
 O adaptar el script:
 
 ```text
-postgresql/load/01_copy_from_csv.sql
+postgresql/load/copy_commands.sql
 ```
 
 Después de cargar `orders`, llenar la tabla particionada:
