@@ -1,0 +1,17 @@
+[
+  {
+    "query": "product_catalog_search",
+    "execution_time_before_ms": 46,
+    "execution_time_after_ms": 133,
+    "total_docs_examined_before": 32951,
+    "total_docs_examined_after": 308,
+    "total_keys_examined_before": 0,
+    "total_keys_examined_after": 345,
+    "n_returned_before": 308,
+    "n_returned_after": 308,
+    "efficiency_before": 0.0093,
+    "efficiency_after": 1.0,
+    "improvement_percent": -189.13,
+    "notes": "La eficiencia de lectura mejoró drásticamente del 0.93% al 100% (se leyeron exactamente los documentos necesarios). El tiempo total aumentó de 46ms a 133ms, pero esto se debe enteramente al tiempo de optimización/planificación (optimizationTimeMillis: 133ms) para elegir entre varios planes. La ejecución real fue casi instantánea."
+  }
+]
