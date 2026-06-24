@@ -1,0 +1,175 @@
+db.catalogo_enriquecido_sinindices.find(
+    { "category": { $in: ["perfumery", "perfumaria"] }, "price": { $lt: 50 } }
+).sort(
+    { "computed_metrics.total_units_sold": -1 }
+).explain("executionStats")
+
+{
+  explainVersion: '1',
+  queryPlanner: {
+    namespace: 'ecommify_db.catalogo_enriquecido_sinindices',
+    parsedQuery: {
+      '$and': [
+        {
+          price: {
+            '$lt': 50
+          }
+        },
+        {
+          category: {
+            '$in': [
+              'perfumaria',
+              'perfumery'
+            ]
+          }
+        }
+      ]
+    },
+    indexFilterSet: false,
+    queryHash: '0F36554D',
+    planCacheShapeHash: '0F36554D',
+    planCacheKey: 'A606D839',
+    optimizationTimeMillis: 0,
+    maxIndexedOrSolutionsReached: false,
+    maxIndexedAndSolutionsReached: false,
+    maxScansToExplodeReached: false,
+    prunedSimilarIndexes: false,
+    winningPlan: {
+      isCached: false,
+      stage: 'SORT',
+      sortPattern: {
+        'computed_metrics.total_units_sold': -1
+      },
+      memLimit: 33554432,
+      type: 'simple',
+      inputStage: {
+        stage: 'COLLSCAN',
+        filter: {
+          '$and': [
+            {
+              price: {
+                '$lt': 50
+              }
+            },
+            {
+              category: {
+                '$in': [
+                  'perfumaria',
+                  'perfumery'
+                ]
+              }
+            }
+          ]
+        },
+        direction: 'forward'
+      }
+    },
+    rejectedPlans: []
+  },
+  executionStats: {
+    executionSuccess: true,
+    nReturned: 308,
+    executionTimeMillis: 46,
+    totalKeysExamined: 0,
+    totalDocsExamined: 32951,
+    executionStages: {
+      isCached: false,
+      stage: 'SORT',
+      nReturned: 308,
+      executionTimeMillisEstimate: 46,
+      works: 33261,
+      advanced: 308,
+      needTime: 32952,
+      needYield: 0,
+      saveState: 3,
+      restoreState: 3,
+      isEOF: 1,
+      sortPattern: {
+        'computed_metrics.total_units_sold': -1
+      },
+      memLimit: 33554432,
+      type: 'simple',
+      totalDataSizeSorted: 167578,
+      usedDisk: false,
+      spills: 0,
+      spilledDataStorageSize: 0,
+      inputStage: {
+        stage: 'COLLSCAN',
+        filter: {
+          '$and': [
+            {
+              price: {
+                '$lt': 50
+              }
+            },
+            {
+              category: {
+                '$in': [
+                  'perfumaria',
+                  'perfumery'
+                ]
+              }
+            }
+          ]
+        },
+        nReturned: 308,
+        executionTimeMillisEstimate: 38,
+        works: 32952,
+        advanced: 308,
+        needTime: 32643,
+        needYield: 0,
+        saveState: 3,
+        restoreState: 3,
+        isEOF: 1,
+        direction: 'forward',
+        docsExamined: 32951
+      }
+    }
+  },
+  queryShapeHash: 'D9830FE0A51FFCB673B99CAF16B6C671E6D30559550EF4864F9C6F8403C8C1C7',
+  command: {
+    find: 'catalogo_enriquecido_sinindices',
+    filter: {
+      category: {
+        '$in': [
+          'perfumery',
+          'perfumaria'
+        ]
+      },
+      price: {
+        '$lt': 50
+      }
+    },
+    sort: {
+      'computed_metrics.total_units_sold': -1
+    },
+    '$db': 'ecommify_db'
+  },
+  serverInfo: {
+    host: 'ac-edntath-shard-00-02.f3mayfr.mongodb.net',
+    port: 27017,
+    version: '8.0.26',
+    gitVersion: 'a2c24805265db119cc39f2f54e067b4294a4ddd2'
+  },
+  serverParameters: {
+    internalQueryFacetBufferSizeBytes: 104857600,
+    internalQueryFacetMaxOutputDocSizeBytes: 104857600,
+    internalLookupStageIntermediateDocumentMaxSizeBytes: 16793600,
+    internalDocumentSourceGroupMaxMemoryBytes: 104857600,
+    internalQueryMaxBlockingSortMemoryUsageBytes: 33554432,
+    internalQueryProhibitBlockingMergeOnMongoS: 0,
+    internalQueryMaxAddToSetBytes: 104857600,
+    internalDocumentSourceSetWindowFieldsMaxMemoryBytes: 104857600,
+    internalQueryFrameworkControl: 'trySbeRestricted',
+    internalQueryPlannerIgnoreIndexWithCollationForRegex: 1
+  },
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1782266660, i: 2 }),
+    signature: {
+      hash: Binary.createFromBase64('S0VRKx1TM34B/NjT81TlB2u31Mc=', 0),
+      keyId: Long('7594611985992384513')
+    }
+  },
+  operationTime: Timestamp({ t: 1782266660, i: 2 })
+}
