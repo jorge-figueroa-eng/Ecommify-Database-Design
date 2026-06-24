@@ -1,7 +1,4 @@
 .env
-postgresql/optimizaciones/data/
+docs/archivo/optimizaciones/data/
 __pycache__/
 *.pyc
-
-actividad5/Tasks5.md
-actividad5/paraph.md

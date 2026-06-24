@@ -121,8 +121,7 @@ docs/                          Documento técnico, checklist y
 
 ## 7. Archivos clave para entrega
 
-- `docs/Etapa_2_Documento_Tecnico.md`
-- `docs/Etapa_2_Documento_Tecnico.docx`
+- `docs/Documento_Tecnico.md`
 - `docs/checklist_rubrica.md`
 - `evidences/postgresql/postgresql_metrics.csv`
 - `evidences/mongodb/mongodb_metrics.csv`
